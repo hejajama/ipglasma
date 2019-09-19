@@ -848,6 +848,23 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
 	}
     }
 
+    // Random eccentricities -1 < epsilon < 1
+    double epsilon_1=-2;
+    double epsilon_2 = -2;
+    while (epsilon_1 < -0.8 or epsilon_1 > 0.8)
+    {    
+        epsilon_1 = random->Gauss();
+    };
+    while (epsilon_2 < -0.8 or epsilon_2 > 0.8)
+    {
+        epsilon_2 = random->Gauss();
+    }
+    cout << "Sampled epsilon_1 = " << epsilon_1 << " and epsilon_2 = " << epsilon_2 << endl;
+
+    // Random direction
+    double angle_1 = random->genrand64_real1()*2.0*M_PI;
+    double angle_2 = random->genrand64_real1()*2.0*M_PI;
+    
 //add all T_p's (new in version 1.2)
 #pragma omp parallel
   {
@@ -890,9 +907,9 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
 		{
 		  phi = nucleusA.at(i).phi;
 
-		  bp2 = (xm-x)*(xm-x)+(ym-y)*(ym-y) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+		  bp2 = std::pow(1.0 - epsilon_1,2.0)*pow(xm-(cos(angle_1)*x + sin(angle_1)*y),2)+std::pow(1.0 + epsilon_1, 2.0)*pow(ym-(-sin(angle_1)*x + cos(angle_1)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
 		  bp2 /= hbarc*hbarc;     	  
-		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG)*gaussA[i][0]; // T_p in this cell for the current nucleon
+		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG*(1.0-epsilon_1*epsilon_1))*gaussA[i][0]; // T_p in this cell for the current nucleon
 		}
 
                 lat->cells[localpos]->setTpA(lat->cells[localpos]->getTpA()+T/nucleiInAverage); // add up all T_p
@@ -921,10 +938,10 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
 		{
 		  phi = nucleusB.at(i).phi;
 	      
-		  bp2 = (xm-x)*(xm-x)+(ym-y)*(ym-y) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+		  bp2 = std::pow(1.0-epsilon_2, 2.0)*pow(xm-(cos(angle_2)*x+sin(angle_2)*y),2)+std::pow(1.0+epsilon_2, 2.0)*pow(ym-(-sin(angle_2)*x+cos(angle_2)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
 		  bp2 /= hbarc*hbarc;
 		  
-		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG)*gaussB[i][0]; // T_p in this cell for the current nucleon
+		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG*(1.0-epsilon_2*epsilon_2))*gaussB[i][0]; // T_p in this cell for the current nucleon
 		}
 	      
                 lat->cells[localpos]->setTpB(lat->cells[localpos]->getTpB()+T/nucleiInAverage); // add up all T_p	      
