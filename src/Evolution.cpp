@@ -453,6 +453,7 @@ void Evolution::run(Lattice* lat, BufferLattice* bufferlat, Group* group, Parame
           || it==floor(it2) || it==floor(it3) || it==floor(itmax)) {
           Tmunu(lat,group,param,it);
           u(lat,group,param,it); // computes flow velocity and correct energy density 
+        cout <<"Saved info at physical time " << it*a*dtau << " fm/c" << endl;
       }
 
       if(it%10==0)

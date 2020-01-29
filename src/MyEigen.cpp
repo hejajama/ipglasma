@@ -306,7 +306,7 @@ void MyEigen::flowVelocity4D(Lattice *lat, Group *group, Parameters *param, int 
     ha = hL/static_cast<double>(hx);
 
     stringstream streuH_name;
-    streuH_name << "epsilon-u-Hydro-t" << it*dtau*a << "-" << param->getEventId() << ".dat";
+    streuH_name << param->getg2mu() << "/epsilon-u-Hydro-t" << it*dtau*a << "-" << param->getEventId() << ".dat";
 
     // stringstream strEtot_name;
     // strEtot_name << "Etot-t" << it*dtau*a << "-" << param->getEventId() << ".dat";
