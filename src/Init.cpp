@@ -575,6 +575,7 @@ double Init::getNuclearQs2(Parameters *param, Random* random, double T, double y
     {
       cout << check << ": T=" << T << endl ;
       cerr << " [Init:getNuclearQs2]:ERROR: something went wrong in determining the value of Qs^2. Using maximal T_p" << endl;
+    exit(1);
       value = Tlist[iTpmax-1];
     }
  
@@ -849,21 +850,47 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
     }
 
     // Random eccentricities -1 < epsilon < 1
-    double epsilon_1=-2;
-    double epsilon_2 = -2;
-    while (epsilon_1 < -0.8 or epsilon_1 > 0.8)
+    double e2_1=-2;
+    double e2_2 = -2;
+    while (e2_1 < -0.5 or e2_1 > 0.5)
     {    
-        epsilon_1 = random->Gauss();
+        e2_1 = random->Gauss();
     };
-    while (epsilon_2 < -0.8 or epsilon_2 > 0.8)
+    while (e2_2 < -0.5 or e2_2 > 0.5)
     {
-        epsilon_2 = random->Gauss();
+        e2_2 = random->Gauss();
     }
-    cout << "Sampled epsilon_1 = " << epsilon_1 << " and epsilon_2 = " << epsilon_2 << endl;
+    cout << "Sampled e2_1 = " << e2_1 << " and e2 = " << e2_2 << endl;
+    double angle2_1=random->genrand64_real1()*2.0*M_PI;
+    double angle2_2=random->genrand64_real1()*2.0*M_PI;
+    // Random triangularities -1 < epsilon < 1
+    double e3_1=-2;
+    double e3_2 = -2;
+    while (e3_1 < -0.6 or e3_1 > 0.6)
+    {    
+        e3_1 = random->Gauss();
+    };
+    while (e3_2 < -0.6 or e3_2 > 0.6)
+    {
+        e3_2 = random->Gauss();
+    }
 
-    // Random direction
-    double angle_1 = random->genrand64_real1()*2.0*M_PI;
-    double angle_2 = random->genrand64_real1()*2.0*M_PI;
+    // Random direction for e3
+    double angle3_1 = random->genrand64_real1()*2.0*M_PI;
+    double angle3_2 = random->genrand64_real1()*2.0*M_PI;
+
+    // Kill v2
+    e2_1=0;
+    e2_2=0;     
+    
+    e3_1=0.0; e3_2=0.0;
+    
+
+    // Round
+    //e2_1=0; e2=0; angle_1=0; angle_2=0;
+    // test case
+    //e2_1=0.0; e3_1=0.4; e2_2=0.0; e3_2=0.4;
+    //angle2_1=0.0; angle3_1=0.0; angle2_2=0; angle3_2=M_PI/4.0;
     
 //add all T_p's (new in version 1.2)
 #pragma omp parallel
@@ -907,11 +934,22 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
 		{
 		  phi = nucleusA.at(i).phi;
 
-		  bp2 = std::pow(1.0 - epsilon_1,2.0)*pow(xm-(cos(angle_1)*x + sin(angle_1)*y),2)+std::pow(1.0 + epsilon_1, 2.0)*pow(ym-(-sin(angle_1)*x + cos(angle_1)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+//		  bp2 = std::pow(1.0 - e2_1,2.0)*pow(xm-(cos(angle_1)*x + sin(angle_1)*y),2)+std::pow(1.0 + e2_1, 2.0)*pow(ym-(-sin(angle_1)*x + cos(angle_1)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+         bp2 = pow(xm-x,2) + pow(ym-y,2);
+        double angle = std::atan2(ym-y, xm-x); 
+    /*std::atan((ym-y)/(xm-x));
+        if (std::abs(ym-y) < 1e-20 and std::abs(xm-x)  < 1e-20) angle=0;
+        if (ym-y > 1e-20 and std::abs(xm-x) < 1e-20) angle = M_PI/2.0;
+        if (ym-y < 1e-20 and std::abs(xm-x) < 1e-20) angle = -M_PI/2.0;
+     */   
+        bp2 *= std::pow( 1.0 + e2_1 * std::cos(2.0*(angle2_1-angle)) + e3_1*std::cos(3.0*(angle3_1 - angle)), 2.0);
 		  bp2 /= hbarc*hbarc;     	  
-		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG*(1.0-epsilon_1*epsilon_1))*gaussA[i][0]; // T_p in this cell for the current nucleon
+		  T = exp(-bp2/(2.*BG))/(2.*PI*BG)*gaussA[i][0]; // T_p in this cell for the current nucleon
+        if (localpos == 131328)
+{   
+        cout << "pos " << localpos << " bp2 " << bp2 << " x " << x << " y " << y << " angle " << angle << " T " << T << endl;
+}
 		}
-
                 lat->cells[localpos]->setTpA(lat->cells[localpos]->getTpA()+T/nucleiInAverage); // add up all T_p
 
 	    }
@@ -938,10 +976,19 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
 		{
 		  phi = nucleusB.at(i).phi;
 	      
-		  bp2 = std::pow(1.0-epsilon_2, 2.0)*pow(xm-(cos(angle_2)*x+sin(angle_2)*y),2)+std::pow(1.0+epsilon_2, 2.0)*pow(ym-(-sin(angle_2)*x+cos(angle_2)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+//		  bp2 = std::pow(1.0-e2_2, 2.0)*pow(xm-(cos(angle_2)*x+sin(angle_2)*y),2)+std::pow(1.0+e2, 2.0)*pow(ym-(-sin(angle_2)*x+cos(angle_2)*y),2) + xi*pow((xm-x)*cos(phi) + (ym-y)*sin(phi),2.);
+        bp2 = pow(xm-x,2) + pow(ym-y,2);
+        double angle =  std::atan2(ym-y, xm-x);
+/*std::atan((ym-y)/(xm-x));
+         if (std::abs(ym-y) < 1e-20 and std::abs(xm-x)  < 1e-20) angle=0;
+        if (ym-y > 1e-20 and std::abs(xm-x) < 1e-20) angle = M_PI/2.0;
+        if (ym-y < 1e-20 and std::abs(xm-x) < 1e-20) angle = -M_PI/2.0;
+ */       
+       bp2 *= std::pow(1.0 + e2_2 * std::cos(2.0*(angle2_2-angle)) + e3_2*std::cos(3.0*(angle3_2 - angle)), 2.0);
+
 		  bp2 /= hbarc*hbarc;
 		  
-		  T = sqrt(1+xi)*exp(-bp2/(2.*BG))/(2.*PI*BG*(1.0-epsilon_2*epsilon_2))*gaussB[i][0]; // T_p in this cell for the current nucleon
+		  T = exp(-bp2/(2.*BG))/(2.*PI*BG)*gaussB[i][0]; // T_p in this cell for the current nucleon
 		}
 	      
                 lat->cells[localpos]->setTpB(lat->cells[localpos]->getTpB()+T/nucleiInAverage); // add up all T_p	      
@@ -1186,9 +1233,11 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
                   if (param->getUseIPsat())
                   { 
 		  	// nucleus A 
+            if (localpos == 131328)
+            cout << localpos << " " << lat->cells[localpos]->getTpA() << " " << endl;
 		  	lat->cells[localpos]->setg2mu2A(getNuclearQs2(param, random, lat->cells[localpos]->getTpA(), localrapidity)/param->getQsmuRatio()/param->getQsmuRatio()
 					     *a*a/hbarc/hbarc/param->getg()/param->getg()); // lattice units? check
-		  
+		  	
 		  	// nucleus B 
 		  	lat->cells[localpos]->setg2mu2B(getNuclearQs2(param, random, lat->cells[localpos]->getTpB(), localrapidity)/param->getQsmuRatioB()/param->getQsmuRatioB()
 					     *a*a/hbarc/hbarc/param->getg()/param->getg()); 
@@ -1222,7 +1271,6 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
   } // end  loop over x corodinates 
   } // end pramga omp parallel 
 
-  
   
   // output gmu 
   count=0;
@@ -1977,7 +2025,9 @@ void Init::init(Lattice *lat, Group *group, Parameters *param, Random *random, G
       if(param->getSuccess()==0)
 	{
 	  cout << "No collision happened on rank " << param->getMPIRank() << ". Restarting with new random number..." << endl;
-	  return;
+        cout << "Eiku hyvaksytaan!" << endl;
+        param->setSuccess(1);
+//	  return;
 	}
       // sample color charges and find Wilson lines V_A and V_B
       setV(lat, group, param, random, glauber);      
