@@ -860,20 +860,25 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
     {
         e2_2 = random->Gauss();
     }
-    cout << "Sampled e2_1 = " << e2_1 << " and e2 = " << e2_2 << endl;
+//    cout << "Sampled e2_1 = " << e2_1 << " and e2 = " << e2_2 << endl;
     double angle2_1=random->genrand64_real1()*2.0*M_PI;
     double angle2_2=random->genrand64_real1()*2.0*M_PI;
     // Random triangularities -1 < epsilon < 1
     double e3_1=-2;
     double e3_2 = -2;
-    while (e3_1 < -0.6 or e3_1 > 0.6)
+/*
+    while (e3_1 < -0.5 or e3_1 > 0.5)
     {    
         e3_1 = random->Gauss();
     };
-    while (e3_2 < -0.6 or e3_2 > 0.6)
+    while (e3_2 < -0.5 or e3_2 > 0.5)
     {
         e3_2 = random->Gauss();
     }
+*/
+    const double maxe3 = 0.7;
+    e3_1 = 2.0*maxe3*(random->genrand64_real1() - 0.5);
+    e3_2 = 2.0*maxe3*(random->genrand64_real1() - 0.5);
 
     // Random direction for e3
     double angle3_1 = random->genrand64_real1()*2.0*M_PI;
@@ -883,7 +888,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
     e2_1=0;
     e2_2=0;     
     
-    e3_1=0.0; e3_2=0.0;
+    //e3_1=0.0; e3_2=0.0;
     
 
     // Round
@@ -891,6 +896,8 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
     // test case
     //e2_1=0.0; e3_1=0.4; e2_2=0.0; e3_2=0.4;
     //angle2_1=0.0; angle3_1=0.0; angle2_2=0; angle3_2=M_PI/4.0;
+
+    cout << "Sampled e3_1 = " << e3_1 << " and e3_2 = " << e3_2 << endl;
     
 //add all T_p's (new in version 1.2)
 #pragma omp parallel
@@ -942,15 +949,12 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
         if (ym-y > 1e-20 and std::abs(xm-x) < 1e-20) angle = M_PI/2.0;
         if (ym-y < 1e-20 and std::abs(xm-x) < 1e-20) angle = -M_PI/2.0;
      */   
-        bp2 *= std::pow( 1.0 + e2_1 * std::cos(2.0*(angle2_1-angle)) + e3_1*std::cos(3.0*(angle3_1 - angle)), 2.0);
+         bp2 *= 1.0 + e2_1 * std::cos(2.0*(angle2_1-angle)) + e3_1*std::cos(3.0*(angle3_1 - angle));
 		  bp2 /= hbarc*hbarc;     	  
 		  T = exp(-bp2/(2.*BG))/(2.*PI*BG)*gaussA[i][0]; // T_p in this cell for the current nucleon
-        if (localpos == 131328)
-{   
-        cout << "pos " << localpos << " bp2 " << bp2 << " x " << x << " y " << y << " angle " << angle << " T " << T << endl;
-}
+
 		}
-                lat->cells[localpos]->setTpA(lat->cells[localpos]->getTpA()+T/nucleiInAverage); // add up all T_p
+        lat->cells[localpos]->setTpA(lat->cells[localpos]->getTpA()+T/nucleiInAverage); // add up all T_p
 
 	    }
 	  
@@ -984,7 +988,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
         if (ym-y > 1e-20 and std::abs(xm-x) < 1e-20) angle = M_PI/2.0;
         if (ym-y < 1e-20 and std::abs(xm-x) < 1e-20) angle = -M_PI/2.0;
  */       
-       bp2 *= std::pow(1.0 + e2_2 * std::cos(2.0*(angle2_2-angle)) + e3_2*std::cos(3.0*(angle3_2 - angle)), 2.0);
+       bp2 *= 1.0 + e2_2 * std::cos(2.0*(angle2_2-angle)) + e3_2*std::cos(3.0*(angle3_2 - angle));
 
 		  bp2 /= hbarc*hbarc;
 		  
