@@ -1192,8 +1192,8 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
                   double y = iy*L/double(N)-L/2.;
                   int localpos = ix*N+iy;
                   double envelope =  exp(-(x*x/(2.*sigmax*sigmax) + y*y/(2.*sigmay*sigmay)))/(2.*M_PI*sigmax*sigmay);
-                  lat->cells[localpos]->setg2mu2A(envelope*param->getg2mu()*param->getg2mu()/param->getg()/param->getg());
-                  lat->cells[localpos]->setg2mu2B(envelope*param->getg2mu()*param->getg2mu()/param->getg()/param->getg());
+                  lat->cells[localpos]->setg2mu2A(envelope*param->getg2mu()*param->getg2mu()*a*a/hbarc/hbarc/param->getg()/param->getg());
+                  lat->cells[localpos]->setg2mu2B(envelope*param->getg2mu()*param->getg2mu()*a*a/hbarc/hbarc/param->getg()/param->getg());
                 }
             }
         }
@@ -1204,8 +1204,8 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param, Random *random
               for(int iy=0; iy<N; iy++)
                 {
                   int localpos = ix*N+iy;
-                  lat->cells[localpos]->setg2mu2A(param->getg2mu()*param->getg2mu()/param->getg()/param->getg());
-                  lat->cells[localpos]->setg2mu2B(param->getg2mu()*param->getg2mu()/param->getg()/param->getg());
+                  lat->cells[localpos]->setg2mu2A(param->getg2mu()*param->getg2mu()*a*a/hbarc/hbarc/param->getg()/param->getg());
+                  lat->cells[localpos]->setg2mu2B(param->getg2mu()*param->getg2mu()*a*a/hbarc/hbarc/param->getg()/param->getg());
                 }
             }
         }
