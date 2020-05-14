@@ -1965,7 +1965,6 @@ void Init::setV(Lattice *lat, Group* group, Parameters *param, Random* random, G
             fft->fftnComplex(rhoACoeff[n],rhoACoeff[n],nn,2,-1);
           }
         // compute U
-  
 #pragma omp parallel
         {      
           double in[8];
@@ -1982,11 +1981,23 @@ void Init::setV(Lattice *lat, Group* group, Parameters *param, Random* random, G
                      in[a] = -(rhoACoeff[a][pos]).real(); // expmCoeff wil calculate exp(i in[a]t[a]), so just multiply by -1 (not -i)
                    }
                  
-                 U = temp2.expmCoeff(in, Nc);
-                 
-                 tempNew = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                   U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
-                 
+                 if (Nc == 3 and false)
+                 {
+                     U = temp2.expmCoeff(in, Nc);
+                     
+                     tempNew = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) +
+                       U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
+                 }
+                else if (Nc == 2)
+                {
+                    std::complex<double> im(0,1);
+                    temp2=0;
+                    for (int a=0; a<Nc2m1; a++)
+                    {
+                        temp2+=im*in[a]*group->getT(a);
+                    }
+                    tempNew = temp2.expm();
+                }
                  temp = tempNew * lat->cells[pos]->getU();
                  // set U
                  lat->cells[pos]->setU(temp);
@@ -2076,12 +2087,24 @@ void Init::setV(Lattice *lat, Group* group, Parameters *param, Random* random, G
                      in[a] = -(rhoACoeff[a][pos]).real(); // expmCoeff wil calculate exp(i in[a]t[a]), so just multiply by -1 (not -i)
                    }
                  
-                 U = temp2.expmCoeff(in, Nc);
-                 
-                 
-                 tempNew = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                   U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
-                 
+                 if (Nc==3)
+                 {
+                     U = temp2.expmCoeff(in, Nc);
+                     
+                     
+                     tempNew = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) +
+                       U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
+                 }
+                 else if (Nc == 2)
+                 {
+                     std::complex<double> im(0,1);
+                     temp2=0;
+                     for (int a=0; a<Nc2m1; a++)
+                     {
+                         temp2+=im*in[a]*group->getT(a);
+                     }
+                     tempNew = temp2.expm();
+                 }
                  temp = tempNew * lat->cells[pos]->getU2();
                  // set U
                  lat->cells[pos]->setU2(temp);
@@ -2623,12 +2646,26 @@ void Init::init(Lattice *lat, Group *group, Parameters *param, Random *random, G
                     in[a] = (alpha[a]).real(); // expmCoeff wil calculate exp(i in[a]t[a])
                   }
                 
-                U = tempNew.expmCoeff(in, Nc);
-                
-                temp2 = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                  U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
-                
-                lat->cells[pos]->setUx(temp2); 
+                if (Nc == 3)
+                {
+                    U = tempNew.expmCoeff(in, Nc);
+                        
+                    temp2 = U[0]*one;
+                    for (int kk=1; kk < Nc2m1; kk++)
+                        temp2 += U[kk]*group->getT(kk);
+                }
+                else if (Nc == 2)
+                  {
+                      std::complex<double> im(0,1);
+                      temp2=0;
+                      for (int a=0; a<Nc2m1; a++)
+                      {
+                          temp2+=im*in[a]*group->getT(a);
+                      }
+                      temp2 = temp2.expm();
+                  }
+
+                lat->cells[pos]->setUx(temp2);
                 
                 expAlpha=temp2;
                 temp2.conjg();
@@ -2656,10 +2693,26 @@ void Init::init(Lattice *lat, Group *group, Parameters *param, Random *random, G
                         in[a] = (alpha[a]).real(); // expmCoeff wil calculate exp(i in[a]t[a])
                       }
                     
-                    U = tempNew.expmCoeff(in, Nc);
                     
-                    temp2 = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                      U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
+                      if (Nc == 3)
+                      {
+                          U = tempNew.expmCoeff(in, Nc);
+                              
+                          temp2 = U[0]*one;
+                          for (int kk=1; kk < Nc2m1; kk++)
+                              temp2 += U[kk]*group->getT(kk);
+                      }
+                      else if (Nc == 2)
+                      {
+                          std::complex<double> im(0,1);
+                          temp2=0;
+                          for (int a=0; a<Nc2m1; a++)
+                          {
+                              temp2+=im*in[a]*group->getT(a);
+                          }
+                          temp2 = temp2.expm();
+                      }
+                      
                     
                     lat->cells[pos]->setUx(temp2); 
                     
@@ -2795,11 +2848,25 @@ void Init::init(Lattice *lat, Group *group, Parameters *param, Random *random, G
                     in[a] = (alpha[a]).real(); // expmCoeff wil calculate exp(i in[a]t[a])
                   }
                 
-                U = tempNew.expmCoeff(in, Nc);
+                if (Nc == 3)
+                {
+                    U = tempNew.expmCoeff(in, Nc);
+                        
+                    temp2 = U[0]*one;
+                    for (int kk=1; kk < Nc2m1; kk++)
+                        temp2 += U[kk]*group->getT(kk);
+                }
+                else if (Nc == 2)
+                {
+                    std::complex<double> im(0,1);
+                    temp2=0;
+                    for (int a=0; a<Nc2m1; a++)
+                    {
+                        temp2+=im*in[a]*group->getT(a);
+                    }
+                    temp2 = temp2.expm();
+                }
 		
-                temp2 = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                  U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
-                
                 lat->cells[pos]->setUy(temp2); 
 		
                 expAlpha=temp2;
@@ -2829,10 +2896,26 @@ void Init::init(Lattice *lat, Group *group, Parameters *param, Random *random, G
                         in[a] = (alpha[a]).real(); // expmCoeff will calculate exp(i in[a]t[a])
                       }
                     
-                    U = tempNew.expmCoeff(in, Nc);
-		    
-                    temp2 = U[0]*one + U[1]*group->getT(0) + U[2]*group->getT(1) + U[3]*group->getT(2) + U[4]*group->getT(3) + 
-                      U[5]*group->getT(4) + U[6]*group->getT(5) + U[7]*group->getT(6) + U[8]*group->getT(7);
+                      if (Nc == 3)
+                      {
+                          U = tempNew.expmCoeff(in, Nc);
+                              
+                          temp2 = U[0]*one;
+                          for (int kk=1; kk < Nc2m1; kk++)
+                              temp2 += U[kk]*group->getT(kk);
+                      }
+                      else if (Nc==2)
+                      {
+                          std::complex<double> im(0,1);
+                          temp2=0;
+                          for (int a=0; a<Nc2m1; a++)
+                          {
+                              temp2+=im*in[a]*group->getT(a);
+                          }
+                          temp2 = temp2.expm();
+                      }
+                      
+                    
                     
                     lat->cells[pos]->setUy(temp2); 
                     

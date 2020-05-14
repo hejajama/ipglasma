@@ -20,9 +20,8 @@ class Group
   //constructor(s)
   Group(int N);
   ~Group();
-
-  Matrix& getT(int i) const { return *t[i]; };
-  Matrix& getTA(int i) const { return *tA[i]; };
+  Matrix& getT(int i) const;
+  Matrix& getTA(int i) const;
 
 };
 #endif

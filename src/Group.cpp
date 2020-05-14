@@ -159,6 +159,24 @@ Group::Group(int N)
   
 }
 
+Matrix& Group::getT(int i) const {
+    if (i >= Nc*Nc-1)
+    {
+        cerr << "Asked generator " << i << " but you have set SU(" << Nc << ")!" << endl;
+        exit(1);
+    }
+    return *t[i];
+};
+Matrix& Group::getTA(int i) const {
+    if (i >= Nc*Nc-1)
+    {
+        cerr << "Asked generator " << i << " but you have set SU(" << Nc << ")!" << endl;
+        exit(1);
+    }
+    return *tA[i];
+    
+};
+
 Group::~Group()
 {
   for (int i=0; i<Nc*Nc-1; i++)
