@@ -140,18 +140,17 @@ void Evolution::evolvePi(Lattice* lat, BufferLattice * bufferlat, Group* group, 
         pi = lat->cells[pos]->getpi();
         // retrieve current phi (at time tau) at this x_T
         phi = lat->cells[pos]->getphi();
+    
         
         // retrieve current phi (at time tau) at x_T+1
         // parallel transport:
         phiX = Ux*Ux.prodABconj(lat->cells[lat->pospX[pos]]->getphi(),Ux);
         phiY = Uy*Uy.prodABconj(lat->cells[lat->pospY[pos]]->getphi(),Uy);
-        
         // phi_{-x} should be defined as UxD*phimX*Ux with the Ux and UxD reversed from the phi_{+x} case
         // retrieve current phi (at time tau) at x_T-1
         // parallel transport:
         UxXm1 = lat->cells[lat->posmX[pos]]->getUx();
         UyYm1 = lat->cells[lat->posmY[pos]]->getUy();
-        
         phimX = Ux.prodAconjB(UxXm1,lat->cells[lat->posmX[pos]]->getphi())*UxXm1;
         phimY = Ux.prodAconjB(UyYm1,lat->cells[lat->posmY[pos]]->getphi())*UyYm1;
         

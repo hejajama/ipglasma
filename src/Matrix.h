@@ -18,8 +18,7 @@ class Matrix
 private:
     int ndim;
     int nn;
-    complex<double>* e;
-
+    std::vector<complex<double> > e;
 public:
     
     //constructor(s)
@@ -27,10 +26,9 @@ public:
     Matrix(int n, double a);
 
     //destructor
-    ~Matrix()
-      {
-	delete[] e;
-      }
+//    ~Matrix()
+//      {
+//      }
 
     Matrix& inv();
     Matrix& logm_pade(const int m);
@@ -122,9 +120,12 @@ public:
 	nn = p.getNN();
 	if(&p != this ) 
 	  {
+        
+        e.clear();  
+        e.reserve(nn);
 	    for(int i=0; i<nn; i++) 
 	      {
-		e[i] = p.e[i];
+		e.push_back(p.e[i]);
 	      }
 	  }
 	return *this;
@@ -133,6 +134,8 @@ public:
     //==
     bool operator == (const Matrix& p) const 
     {
+        if (p.getNN() != getNN())
+            return false;
       for(int i=0; i<nn; i++)
 	if(e[i] != p.e[i]) return false;
       return true;
@@ -141,6 +144,7 @@ public:
     //!=
     bool operator != (const Matrix& p) const 
     {
+     if (p.getNN() != getNN()) return true;
       for(int i=0; i<nn; i++)
 	if(e[i] != p.e[i]) return true;
       return false;
