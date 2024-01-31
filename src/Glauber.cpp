@@ -170,6 +170,17 @@ void Glauber::FindNucleusData2(Nucleus *nucleus, string name, double beta2) {
     nucleus->beta2 = beta2;   // can be modified by the user
     nucleus->beta4 = -0.003; // from arXiv:1508.06294
   }
+  else if (name.compare("X180") == 0) {
+    nucleus->A = 180;
+    nucleus->Z = 90;
+    // Data read in always, these numbers are not used
+    densityFunction = "3Fermi";
+    nucleus->R_WS = 0; 
+    nucleus->w_WS = 0;
+    nucleus->a_WS = 0;   
+    nucleus->beta2 = 0;   
+    nucleus->beta4 = 0; 
+  }
 
   nucleus->rho_WS = nucleus->R_WS;
 

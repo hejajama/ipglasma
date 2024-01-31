@@ -320,7 +320,68 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             glauber->GlauberData.Projectile.beta2,
             glauber->GlauberData.Projectile.beta4, &nucleusA);
       }
-    } else {
+    }
+     else if (A1 == 180) // hypothetical nucleus for which we have different gamma defomrations
+    {
+      // TODO: There is now too much copypaste code here...
+      string fileName;
+      if (param->getlightNucleusOption() == 1) 
+        fileName = "coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=0.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+      else if (param->getlightNucleusOption()==2)
+        fileName="coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=30.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+      else if (param->getlightNucleusOption()==3)
+        fileName="coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=60.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+
+      // sample the position in the file
+      ifstream fin;
+      fin.open(fileName);
+
+      double dummy;
+
+      double ran2 =random->genrand64_real3(); // sample the position in the file
+                                     // uniformly (10000 configurations in file)
+        int nucleusNumber = static_cast<int>(ran2 * 10000);
+        cout << "using nucleus 1 Number = " << nucleusNumber << endl;
+
+        // go to the correct line in the file
+        if (fin) {
+          fin.seekg(std::ios::beg);
+          for (int i = 0; i < nucleusNumber; ++i) {
+            fin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+          }
+          // am now at the correct line in the file
+
+          // start reading one nucleus (3 positions)
+          int A = 0;
+
+          /*
+          fin >> dummy; // first two entries per nucleus are not coordinates
+          fin >> dummy;
+          */
+
+          while (A < glauber->nucleusA1()) {
+            if (!fin.eof()) {
+              fin >> rv.x;
+              fin >> rv.y;
+              fin >> dummy; // don't care about z direction
+              rv.collided = 0;
+              if (A % 2 == 0)
+                rv.proton = 0;
+              else
+                rv.proton = 1;
+              nucleusA.push_back(rv);
+              cout << "A=" << A << ", x=" << rv.x << ", y=" << rv.y << endl;
+              A++;
+            }
+          }
+          param->setA1FromFile(A);
+        } else {
+          cerr << "Error with file " << fileName << endl;
+          exit(1);
+        }
+        fin.close();
+      } 
+   else {
       generate_nucleus_configuration(
           random, A1, Z1, glauber->GlauberData.Projectile.a_WS,
           glauber->GlauberData.Projectile.R_WS,
@@ -542,19 +603,76 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
           exit(1);
         }
         fin.close();
-      } else // standard sampling for oxygen
+      }
+      else // standard sampling for oxygen
       {
         generate_nucleus_configuration(
             random, A2, Z2, glauber->GlauberData.Target.a_WS,
             glauber->GlauberData.Target.R_WS, glauber->GlauberData.Target.beta2,
             glauber->GlauberData.Target.beta4, &nucleusB);
       }
-    } else {
-      generate_nucleus_configuration(
-          random, A2, Z2, glauber->GlauberData.Target.a_WS,
-          glauber->GlauberData.Target.R_WS, glauber->GlauberData.Target.beta2,
-          glauber->GlauberData.Target.beta4, &nucleusB);
-    }
+    } 
+      else if (A2 == 180) // hypothetical nucleus for which we have different gamma defomrations
+    {
+      // TODO: There is now too much copypaste code here...
+      string fileName;
+      if (param->getlightNucleusOption() == 1) 
+        fileName = "coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=0.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+      else if (param->getlightNucleusOption()==2)
+        fileName="coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=30.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+      else if (param->getlightNucleusOption()==3)
+        fileName="coords_rotated_A=180_R=6_a=0.5_b2=0.5_gamma=60.0_b3=0.0_b4=0.0_dmin=0.0.dat";
+
+      // sample the position in the file
+      ifstream fin;
+      fin.open(fileName);
+
+      double dummy;
+
+      double ran2 =random->genrand64_real3(); // sample the position in the file
+                                     // uniformly (10000 configurations in file)
+        int nucleusNumber = static_cast<int>(ran2 * 10000);
+        cout << "using nucleus 2 Number = " << nucleusNumber << endl;
+
+        // go to the correct line in the file
+        if (fin) {
+          fin.seekg(std::ios::beg);
+          for (int i = 0; i < nucleusNumber; ++i) {
+            fin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+          }
+          // am now at the correct line in the file
+
+          // start reading one nucleus (3 positions)
+          int A = 0;
+
+          /*
+          fin >> dummy; // first two entries per nucleus are not coordinates
+          fin >> dummy;
+          */
+
+          while (A < glauber->nucleusA2()) {
+            if (!fin.eof()) {
+              fin >> rv.x;
+              fin >> rv.y;
+              fin >> dummy; // don't care about z direction
+              rv.collided = 0;
+              if (A % 2 == 0)
+                rv.proton = 0;
+              else
+                rv.proton = 1;
+              nucleusB.push_back(rv);
+              cout << "A=" << A << ", x=" << rv.x << ", y=" << rv.y << endl;
+              A++;
+            }
+          }
+          param->setA2FromFile(A);
+        } else {
+          cerr << "Error with file " << fileName << endl;
+          exit(1);
+        }
+        fin.close();
+      } 
+       
     cout << "done. " << endl;
   } else if (param->getNucleonPositionsFromFile() == 1) {
     ifstream fin;
