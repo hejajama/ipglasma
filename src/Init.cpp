@@ -1087,7 +1087,13 @@ void Init::samplePartonPositions(Parameters *param, Random *random,
 
 // Q_s as a function of \sum T_p and y (new in this version of the code - v1.2
 // and up)
-double Init::getNuclearQs2(double T, double y) {
+double Init::getNuclearQs2(double T, double y, Parameters *param) {
+
+  // Simple modification to get "IP-MV" ala Penttala, Salazar
+  // Note that the normalization is controlled by the g2mu parameter in the input file
+  return param->getg2mu()*param->getg2mu()*T;
+/*
+
   double value, fracy, fracT, QsYdown, QsYup;
   int posy, check = 0;
   fracy = 0.;
@@ -1144,6 +1150,7 @@ double Init::getNuclearQs2(double T, double y) {
   }
 
   return value;
+  */
 }
 
 // set g^2\mu^2 as the sum of the individual nucleons' g^2\mu^2, using Q_s(b,y)
@@ -1659,7 +1666,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param,
             while (abs(Ydeviation) > 0.001) {
               if (localrapidity >= 0) {
                 QsA = sqrt(getNuclearQs2(lat->cells[localpos]->getTpA(),
-                                         abs(localrapidity)));
+                                         abs(localrapidity),param));
               } else {
                 xVal = QsA * param->getxFromThisFactorTimesQs() /
                        param->getRoots() * exp(yIn);
@@ -1667,7 +1674,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param,
                   QsA = 0.;
                 else
                   QsA =
-                      sqrt(getNuclearQs2(lat->cells[localpos]->getTpA(), 0.)) *
+                      sqrt(getNuclearQs2(lat->cells[localpos]->getTpA(), 0.,param)) *
                       sqrt(pow((1 - xVal) / (1 - 0.01), exponent) *
                            pow((0.01 / xVal), 0.2));
               }
@@ -1700,7 +1707,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param,
             while (abs(Ydeviation) > 0.001) {
               if (localrapidity >= 0)
                 QsB = sqrt(getNuclearQs2(lat->cells[localpos]->getTpB(),
-                                         abs(localrapidity)));
+                                         abs(localrapidity),param));
               else {
                 xVal = QsB * param->getxFromThisFactorTimesQs() /
                        param->getRoots() * exp(-yIn);
@@ -1708,7 +1715,7 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param,
                   QsB = 0.;
                 else
                   QsB =
-                      sqrt(getNuclearQs2(lat->cells[localpos]->getTpB(), 0.)) *
+                      sqrt(getNuclearQs2(lat->cells[localpos]->getTpB(), 0.,param)) *
                       sqrt(pow((1 - xVal) / (1 - 0.01), exponent) *
                            pow((0.01 / xVal), 0.2));
               }
@@ -1739,13 +1746,13 @@ void Init::setColorChargeDensity(Lattice *lat, Parameters *param,
           } else {
             // nucleus A
             lat->cells[localpos]->setg2mu2A(
-                getNuclearQs2(lat->cells[localpos]->getTpA(), localrapidity) /
+                getNuclearQs2(lat->cells[localpos]->getTpA(), localrapidity,param) /
                 param->getQsmuRatio() / param->getQsmuRatio() * a * a / hbarc /
                 hbarc / param->getg() / param->getg()); // lattice units? check
 
             // nucleus B
             lat->cells[localpos]->setg2mu2B(
-                getNuclearQs2(lat->cells[localpos]->getTpB(), localrapidity) /
+                getNuclearQs2(lat->cells[localpos]->getTpB(), localrapidity,param) /
                 param->getQsmuRatioB() / param->getQsmuRatioB() * a * a /
                 hbarc / hbarc / param->getg() / param->getg());
           }

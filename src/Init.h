@@ -61,7 +61,7 @@ public:
   void readNuclearQs(Parameters *param);
   std::vector<complex<double>> solveAxb(Parameters *param, complex<double> *A,
                                         complex<double> *b);
-  double getNuclearQs2(double Qs2atZeroY, double y);
+  double getNuclearQs2(double Qs2atZeroY, double y, Parameters *param);
   void setColorChargeDensity(Lattice *lat, Parameters *param, Random *random,
                              Glauber *glauber);
   void setV(Lattice *lat, Group *group, Parameters *param, Random *random);
