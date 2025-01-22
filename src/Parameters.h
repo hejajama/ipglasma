@@ -68,6 +68,7 @@ class Parameters {
                         // nucleus A
     double QsmuRatioB;  // ratio between Qs and mu: Q_s = QsmuRatio * g^2 mu for
                         // nucleus B
+    double fluxtube_normalization; // normalization factor for the flux tube density
     double rapidity;  // rapidity to use when getting Q_s from IPSat. Basically
                       // to pick x for now
     int usePseudoRapidity;  // if selected (1) the variable 'rapidity' will
@@ -514,6 +515,9 @@ class Parameters {
     void set_firstb(double x) { first_b = x; }
     double get_firstb() { return first_b; }
     int get_added_lines() { return 4; }
+
+    double getFluxTubeNormalization() { return fluxtube_normalization; }
+    void setFluxTubeNormalization(double x) { fluxtube_normalization = x; }
     
     // JIMWLK functions
     void setm_jimwlk(double x) { m_jimwlk = x; };

@@ -14,6 +14,8 @@
 #include "Parameters.h"
 #include "Random.h"
 #include "pretty_ostream.h"
+#include "vector.hpp" // new in stringy proton: uses my vector class for easier vector algebra, but 
+// used when needed in the stringy proton case, but other parts of the code still use the old structure
 
 enum Initialization_method {
     SAMPLE_COLOR_CHARGES,
@@ -53,8 +55,11 @@ class Init {
     Random *random_ptr_;
 
     Matrix one_;
-    vector<vector<double>> xq1, xq2, yq1, yq2, BGq1, BGq2, gauss1, gauss2;
-
+    vector<vector<double>> xq1, xq2, yq1, yq2, zq1,zq2, BGq1, BGq2, gauss1, gauss2;
+    std::vector<Vec> hotspots_1;     // 3d positions for hot spots - some overlap with above...
+    std::vector<Vec> hotspots_2;
+    Vec fermatpoint_1; // Fluxtubes merge at this point
+    Vec fermatpoint_2;
   public:
     // Constructor.
     Init(const int nn[]) : fft(nn) {};
@@ -77,6 +82,10 @@ class Init {
     void setV(Lattice *lat, Parameters *param, Random *random);
     void readVFromFile(Lattice *lat, Parameters *param, int format);
     void readV2(Lattice *lat, Parameters *param, Glauber *glauber);
+
+    double QuarkThickness(double dist, int i, Parameters* param);
+
+    double FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *param);
 
     void WriteInitialWilsonLines(std::string output_dir, Lattice *lat, Parameters *param);
 

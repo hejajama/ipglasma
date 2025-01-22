@@ -9,9 +9,11 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "Phys_consts.h"
 #include "gsl/gsl_linalg.h"
+#include <gsl/gsl_integration.h>
 
 using PhysConst::hbarc;
 using std::cerr;
@@ -681,7 +683,152 @@ void Init::samplePartonPositions(
             z_array[iq] -= avgzq;
         }
     }
+
+
+
+
 }
+
+
+struct inthelper_fluxtube
+{
+    Parameters* param;
+    Init* Init;
+    double z;
+    Vec fermatpoint;
+    std::vector<Vec> quarks;
+    Vec b;
+};
+
+double inthelperf_fluxtube_z(double z, void* p)
+{
+    inthelper_fluxtube* par = (inthelper_fluxtube*)p;
+    
+    Vec b3d(par->b.GetX(), par->b.GetY(), z);
+    
+    /*cout << "Quarks: " << endl;
+    cout << par->quarks[0] << endl << par->quarks[1] << endl << par->quarks[2] << endl;
+    cout << "center " << par->center << endl;
+    cout << "b " << b3d << endl;
+    */
+    double mindist=999999999999;
+    double density=0;
+    double maxdensity=0;
+    for (unsigned int i=0; i<par->quarks.size(); i++)
+    {
+
+        Vec quark_to_b = b3d - par->quarks[i];
+        Vec quark_to_center = par->fermatpoint - par->quarks[i];
+        Vec center_to_b = b3d - par->fermatpoint;
+        
+        
+        
+        // If we are "outside" the line, then density decreases as a Gaussian
+        // from the quark/center
+        // We also end up here if one angle of the triangle is larger than 120 degrees, when the Fermat
+        // point is actually at one of the quarks
+
+        if (quark_to_b.LenSqr() > quark_to_center.LenSqr() or center_to_b.LenSqr() > quark_to_center.LenSqr())
+        {
+            //cout << "distance from quark "<< i << ": " << quark_to_b.Len() << "   quark_to_center dist " << quark_to_center.Len() << endl;
+            double dist = std::min( quark_to_b.Len(), center_to_b.Len());
+            if (dist < mindist)
+            {
+                mindist=dist;
+            }
+
+            double tmpdensity = par->Init->QuarkThickness(dist, i, par->param);
+            density += tmpdensity; 
+
+            if (tmpdensity > maxdensity)
+                maxdensity = tmpdensity;
+
+            continue;
+            //return par->proton->QuarkThickness(dist, 0);
+        }
+        
+        // Calculate distance from the tube
+        double projection_dotprod = quark_to_b * quark_to_center;
+        double scaling = projection_dotprod / quark_to_center.LenSqr();
+        Vec projection = quark_to_center;
+        projection*= scaling;
+        
+        Vec dist = quark_to_b - projection;
+
+        // Todo: currently no support for Q_s fluctuations, so we simply pass quark id 0    
+        double tmpdensity= par->Init->QuarkThickness(dist.Len(), 0, par->param);
+        density += tmpdensity;
+        
+        if (tmpdensity > maxdensity)
+            maxdensity = tmpdensity;
+
+        if (dist.Len() < mindist)
+            mindist = dist.Len();
+        
+    }
+
+    if (isnan(maxdensity) or isinf(maxdensity))
+    {
+        cout << "maxdensity is " << maxdensity << endl;
+        cout << "quarks: " << endl;
+        for (unsigned int i=0; i<par->quarks.size(); i++)
+        {
+            cout << par->quarks[i] << endl;
+        }
+        cout << "b: " << b3d << endl;
+        cout << "z: " << z << endl;
+        cout << "Dist: " << mindist << endl;
+        cout << "fermatpoint: " << par->fermatpoint << endl;
+        cout << "density: " << density << " maxdensity: " << maxdensity << endl;
+        exit(1);
+    }
+
+    return par->param->getFluxTubeNormalization() * maxdensity;
+}
+
+/*
+ * Fluxtube proton: calculate the thickness function by integrating over the z coordinate
+*/
+double Init:: FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *param)
+{
+    inthelper_fluxtube par;
+    par.Init = this;
+
+    par.fermatpoint = GeometricMedian(hotspots);
+    par.param = param;
+    par.quarks = hotspots;
+    par.b=b;
+
+
+    gsl_function f; f.params=&par;
+    f.function = &inthelperf_fluxtube_z;
+    double result,error;
+    gsl_integration_workspace * w =  gsl_integration_workspace_alloc (100);
+    //gsl_integration_workspace * w =  gsl_integration_workspace_alloc (10);
+    gsl_integration_qag (&f, -50, 50, 0, 1e-2, 100, GSL_INTEG_GAUSS15,
+                          w, &result, &error);
+
+    gsl_integration_workspace_free (w);
+
+    return result;
+    
+
+}
+
+double Init::QuarkThickness(double dist, int i, Parameters* param)
+{
+    dist = dist * 5.068; // I think at this point dist is in fm...
+    double T = std::exp(-dist*dist / (2. * param->getBGq()) )
+                / (2. * M_PI * param->getBGq());
+                                //     * gauss1[i][iq]; 
+    if (isnan(T) or isinf(T))
+    {
+        cout << "dist: " << dist << " i: " << i << " param->getBGq(): " << param->getBGq() << endl;
+        exit(1);
+    }
+    return T;
+}
+
 
 // Q_s as a function of \sum T_p and y (new in this version of the code - v1.2
 // and up)
@@ -930,6 +1077,8 @@ void Init::setColorChargeDensity(
         xq2.clear();
         yq1.clear();
         yq2.clear();
+        zq1.clear();
+        zq2.clear();
         BGq1.clear();
         BGq2.clear();
         gauss1.clear();
@@ -945,12 +1094,13 @@ void Init::setColorChargeDensity(
                 // that paper can't be used if this is done
                 xq1.push_back(x_array);
                 yq1.push_back(y_array);
+                zq1.push_back(z_array);
                 BGq1.push_back(BGq_array);
             }
             int Npartons = std::max(1, static_cast<int>(x_array.size()));
             sampleQsNormalization(random, param, Npartons, gauss_array);
             gauss1.push_back(gauss_array);
-        }
+        }           
 
         for (int i = 0; i < A2; i++) {
             x_array.clear();
@@ -959,6 +1109,7 @@ void Init::setColorChargeDensity(
                     param, random, x_array, y_array, z_array, BGq_array);
                 xq2.push_back(x_array);
                 yq2.push_back(y_array);
+                zq2.push_back(z_array);
                 BGq2.push_back(BGq_array);
             }
             int Npartons = std::max(1, static_cast<int>(x_array.size()));
@@ -1060,21 +1211,31 @@ void Init::setColorChargeDensity(
 
                         if (param->getUseConstituentQuarkProton() > 0) {
                             T = 0.;
+                            std::vector<Vec> hotspots;
                             for (unsigned int iq = 0; iq < xq1[i].size();
                                  iq++) {
-                                bp2 = (xm + xq1[i][iq] - x)
-                                          * (xm + xq1[i][iq] - x)
-                                      + (ym + yq1[i][iq] - y)
-                                            * (ym + yq1[i][iq] - y);
-                                bp2 /= hbarc * hbarc;
+                                    Vec tmp(xq1[i][iq], yq1[i][iq], zq1[i][iq]);
+                                    hotspots.push_back(tmp);
+                                 }
+                                
+                                Vec b_nucleon = Vec((xm - x), (ym - y),0); // distance from the center of the nucleon
+                                
+                                T += FluxTubeThickness(hotspots, b_nucleon, param);
+                                    
 
-                                T +=
-                                    exp(-bp2 / (2. * BGq1[i][iq]))
-                                    / (2. * M_PI * BGq1[i][iq])
-                                    / (static_cast<double>(xq1[i].size()))
-                                    * gauss1[i][iq];  // I removed the 2/3 here
-                                                      // to make it a bit bigger
-                            }
+                                // bp2 = (xm + xq1[i][iq] - x)
+                                //           * (xm + xq1[i][iq] - x)
+                                //       + (ym + yq1[i][iq] - y)
+                                //             * (ym + yq1[i][iq] - y);
+                                // bp2 /= hbarc * hbarc;
+
+                                // T +=
+                                //     exp(-bp2 / (2. * BGq1[i][iq]))
+                                //     / (2. * M_PI * BGq1[i][iq])
+                                //     / (static_cast<double>(xq1[i].size()))
+                                //     * gauss1[i][iq];  // I removed the 2/3 here
+                                //                       // to make it a bit bigger
+                            
                         } else {
                             const double BG = param->getBG();
                             phi = nucleusA_.at(i).phi;
@@ -1094,7 +1255,9 @@ void Init::setColorChargeDensity(
                         lat->cells[localpos]->setTpA(
                             lat->cells[localpos]->getTpA()
                             + T / nucleiInAverage);  // add up all T_p
+
                     }
+                    
 
                     // nucleus B
                     lat->cells[localpos]->setTpB(0.);
@@ -1104,6 +1267,19 @@ void Init::setColorChargeDensity(
 
                         if (param->getUseConstituentQuarkProton() > 0) {
                             T = 0.;
+                            std::vector<Vec> hotspots;
+                            for (unsigned int iq = 0; iq < xq1[i].size();
+                                 iq++) {
+                                    Vec tmp(xq2[i][iq], yq2[i][iq], zq2[i][iq]);
+                                    hotspots.push_back(tmp);
+                                 }
+                                
+                                Vec b_nucleon = Vec((xm - x), (ym - y),0); // distance from the center of the nucleon
+                                
+                                T += FluxTubeThickness(hotspots, b_nucleon, param);
+
+                                /*
+                    
                             for (unsigned int iq = 0; iq < xq2[i].size();
                                  iq++) {
                                 bp2 = (xm + xq2[i][iq] - x)
@@ -1116,7 +1292,8 @@ void Init::setColorChargeDensity(
                                      / (2. * M_PI * BGq2[i][iq])
                                      / (static_cast<double>(xq2[i].size()))
                                      * gauss2[i][iq];
-                            }
+
+                            } */
                         } else {
                             const double BG = param->getBG();
                             phi = nucleusB_.at(i).phi;

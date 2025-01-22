@@ -602,11 +602,14 @@ int readInput(
         param->loadPosteriorParameterSets(param->getSubNucleonParamType());
     }
 
+
+    param->setFluxTubeNormalization(setup->DFind(file_name, "fluxtubeNormalization"));
+
     // JIMWLK parameters
     param->setUseJIMWLK(setup->IFind(file_name, "useJIMWLK"));
     param->setSimpleLangevin(setup->IFind(file_name, "simpleLangevin"));
     param->setMu0_jimwlk(setup->DFind(file_name, "mu0_jimwlk"));
-    param->setLambdaQCD_jimwlk(setup->DFind(file_name,"Lambda_QCD_jimwlk")); // in units of g^2mu
+    param->setLambdaQCD_jimwlk(setup->DFind(file_name,"Lambda_QCD_jimwlk"));
     param->setm_jimwlk(setup->DFind(file_name,"m_jimwlk"));
     param->setJimwlk_alphas(setup->IFind(file_name,"alphas_jimwlk"));
     param->setDs_jimwlk(setup->DFind(file_name,"Ds_jimwlk"));
