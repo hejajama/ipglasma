@@ -693,7 +693,7 @@ void Init::samplePartonPositions(
 struct inthelper_fluxtube
 {
     Parameters* param;
-    Init* Init;
+    Init* init;
     double z;
     Vec fermatpoint;
     std::vector<Vec> quarks;
@@ -737,7 +737,7 @@ double inthelperf_fluxtube_z(double z, void* p)
                 mindist=dist;
             }
 
-            double tmpdensity = par->Init->QuarkThickness(dist, i, par->param);
+            double tmpdensity = par->init->QuarkThickness(dist, i, par->param);
             density += tmpdensity; 
 
             if (tmpdensity > maxdensity)
@@ -756,7 +756,7 @@ double inthelperf_fluxtube_z(double z, void* p)
         Vec dist = quark_to_b - projection;
 
         // Todo: currently no support for Q_s fluctuations, so we simply pass quark id 0    
-        double tmpdensity= par->Init->QuarkThickness(dist.Len(), 0, par->param);
+        double tmpdensity= par->init->QuarkThickness(dist.Len(), 0, par->param);
         density += tmpdensity;
         
         if (tmpdensity > maxdensity)
@@ -792,7 +792,7 @@ double inthelperf_fluxtube_z(double z, void* p)
 double Init:: FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *param)
 {
     inthelper_fluxtube par;
-    par.Init = this;
+    par.init = this;
 
     par.fermatpoint = GeometricMedian(hotspots);
     par.param = param;
