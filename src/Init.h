@@ -56,10 +56,7 @@ class Init {
 
     Matrix one_;
     vector<vector<double>> xq1, xq2, yq1, yq2, zq1,zq2, BGq1, BGq2, gauss1, gauss2;
-    std::vector<Vec> hotspots_1;     // 3d positions for hot spots - some overlap with above...
-    std::vector<Vec> hotspots_2;
-    Vec fermatpoint_1; // Fluxtubes merge at this point
-    Vec fermatpoint_2;
+
   public:
     // Constructor.
     Init(const int nn[]) : fft(nn) {};
@@ -85,7 +82,7 @@ class Init {
 
     double QuarkThickness(double dist, int i, Parameters* param);
 
-    double FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *param);
+    double FluxTubeThickness(std::vector<Vec> hotspots, std::vector<double> Qsflucts, Vec b, Parameters *param);
 
     void WriteInitialWilsonLines(std::string output_dir, Lattice *lat, Parameters *param);
 

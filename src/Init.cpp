@@ -697,6 +697,7 @@ struct inthelper_fluxtube
     double z;
     Vec fermatpoint;
     std::vector<Vec> quarks;
+    std::vector<double> Qsflucts;
     Vec b;
 };
 
@@ -737,7 +738,7 @@ double inthelperf_fluxtube_z(double z, void* p)
                 mindist=dist;
             }
 
-            double tmpdensity = par->init->QuarkThickness(dist, i, par->param);
+            double tmpdensity = par->init->QuarkThickness(dist, i, par->param) * par->Qsflucts[i];
             density += tmpdensity; 
 
             if (tmpdensity > maxdensity)
@@ -754,9 +755,8 @@ double inthelperf_fluxtube_z(double z, void* p)
         projection*= scaling;
         
         Vec dist = quark_to_b - projection;
-
-        // Todo: currently no support for Q_s fluctuations, so we simply pass quark id 0    
-        double tmpdensity= par->init->QuarkThickness(dist.Len(), 0, par->param);
+   
+        double tmpdensity= par->init->QuarkThickness(dist.Len(), i, par->param);
         density += tmpdensity;
         
         if (tmpdensity > maxdensity)
@@ -789,7 +789,7 @@ double inthelperf_fluxtube_z(double z, void* p)
 /*
  * Fluxtube proton: calculate the thickness function by integrating over the z coordinate
 */
-double Init:: FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *param)
+double Init:: FluxTubeThickness(std::vector<Vec> hotspots, std::vector<double> Qsflucts, Vec b, Parameters *param)
 {
     inthelper_fluxtube par;
     par.init = this;
@@ -797,6 +797,7 @@ double Init:: FluxTubeThickness(std::vector<Vec> hotspots, Vec b, Parameters *pa
     par.fermatpoint = GeometricMedian(hotspots);
     par.param = param;
     par.quarks = hotspots;
+    par.Qsflucts=Qsflucts;
     par.b=b;
 
 
@@ -1212,15 +1213,17 @@ void Init::setColorChargeDensity(
                         if (param->getUseConstituentQuarkProton() > 0) {
                             T = 0.;
                             std::vector<Vec> hotspots;
+                            std::vector<double> Qsflucts;
                             for (unsigned int iq = 0; iq < xq1[i].size();
                                  iq++) {
                                     Vec tmp(xq1[i][iq], yq1[i][iq], zq1[i][iq]);
                                     hotspots.push_back(tmp);
+                                    Qsflucts.push_back(gauss1[i][iq]);
                                  }
                                 
                                 Vec b_nucleon = Vec((xm - x), (ym - y),0); // distance from the center of the nucleon
                                 
-                                T += FluxTubeThickness(hotspots, b_nucleon, param);
+                                T += FluxTubeThickness(hotspots, Qsflucts, b_nucleon, param);
                                     
 
                                 // bp2 = (xm + xq1[i][iq] - x)
@@ -1268,15 +1271,17 @@ void Init::setColorChargeDensity(
                         if (param->getUseConstituentQuarkProton() > 0) {
                             T = 0.;
                             std::vector<Vec> hotspots;
+                            std::vector<double> Qsflucts;
                             for (unsigned int iq = 0; iq < xq1[i].size();
                                  iq++) {
                                     Vec tmp(xq2[i][iq], yq2[i][iq], zq2[i][iq]);
                                     hotspots.push_back(tmp);
+                                    Qsflucts.push_back(gauss2[i][iq]);
                                  }
                                 
                                 Vec b_nucleon = Vec((xm - x), (ym - y),0); // distance from the center of the nucleon
                                 
-                                T += FluxTubeThickness(hotspots, b_nucleon, param);
+                                T += FluxTubeThickness(hotspots, Qsflucts, b_nucleon, param);
 
                                 /*
                     
