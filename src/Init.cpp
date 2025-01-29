@@ -800,13 +800,12 @@ double Init:: FluxTubeThickness(std::vector<Vec> hotspots, std::vector<double> Q
     par.Qsflucts=Qsflucts;
     par.b=b;
 
-
     gsl_function f; f.params=&par;
     f.function = &inthelperf_fluxtube_z;
     double result,error;
     gsl_integration_workspace * w =  gsl_integration_workspace_alloc (100);
     //gsl_integration_workspace * w =  gsl_integration_workspace_alloc (10);
-    gsl_integration_qag (&f, -50, 50, 0, 1e-2, 100, GSL_INTEG_GAUSS15,
+    gsl_integration_qag (&f, -10, 10, 0, 0.02, 100, GSL_INTEG_GAUSS15,
                           w, &result, &error);
 
     gsl_integration_workspace_free (w);
@@ -1098,6 +1097,7 @@ void Init::setColorChargeDensity(
                 zq1.push_back(z_array);
                 BGq1.push_back(BGq_array);
             }
+            gauss_array.clear();
             int Npartons = std::max(1, static_cast<int>(x_array.size()));
             sampleQsNormalization(random, param, Npartons, gauss_array);
             gauss1.push_back(gauss_array);
@@ -1114,6 +1114,7 @@ void Init::setColorChargeDensity(
                 BGq2.push_back(BGq_array);
             }
             int Npartons = std::max(1, static_cast<int>(x_array.size()));
+            gauss_array.clear();
             sampleQsNormalization(random, param, Npartons, gauss_array);
             gauss2.push_back(gauss_array);
         }
@@ -1272,7 +1273,7 @@ void Init::setColorChargeDensity(
                             T = 0.;
                             std::vector<Vec> hotspots;
                             std::vector<double> Qsflucts;
-                            for (unsigned int iq = 0; iq < xq1[i].size();
+                            for (unsigned int iq = 0; iq < xq2[i].size();
                                  iq++) {
                                     Vec tmp(xq2[i][iq], yq2[i][iq], zq2[i][iq]);
                                     hotspots.push_back(tmp);
