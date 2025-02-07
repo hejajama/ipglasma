@@ -68,7 +68,8 @@ class Parameters {
                         // nucleus A
     double QsmuRatioB;  // ratio between Qs and mu: Q_s = QsmuRatio * g^2 mu for
                         // nucleus B
-    double fluxtube_normalization; // normalization factor for the flux tube density
+    double fluxtube_normalization;  // normalization factor for the flux tube
+                                    // density
     double rapidity;  // rapidity to use when getting Q_s from IPSat. Basically
                       // to pick x for now
     int usePseudoRapidity;  // if selected (1) the variable 'rapidity' will
@@ -139,6 +140,7 @@ class Parameters {
     double b;            // impact parameter
     double bmin;         // minimum impact parameter to sample from
     double bmax;         // maximum impact parameter to sample to
+    double phiRP_;       // the reaction plane angle
     int linearb;         // sample b from a linear distribution if 1, uniform
                          // distribution otherwise
     std::string Target;  // target nucleus' name
@@ -165,7 +167,7 @@ class Parameters {
     int useFixedNpart;  // if 0 do not demand a given N_part, if >1 sample the
                         // initial configuration until the given N_part is
                         // reached
-    double rnp;         // distance between proton and neutron in the transverse
+    double rnp = 0.;    // distance between proton and neutron in the transverse
                         // projection of the deuteron
     int smearQs;  // decide whether to smear Q_s using a Poisson distribution
                   // around its mean at every x_T (1) or not (0)
@@ -213,23 +215,26 @@ class Parameters {
 
     bool computeGluonMultiplicity_;  // flag to compute gluonMultiplicity
 
-    bool useJIMWLK; // flag to use JIMWLK evolution
+    bool useJIMWLK;  // flag to use JIMWLK evolution
     bool simpleLangevin_;
     int which_stage;
-    double first_b; // Impact parameter sampled before the JIMWLK evolution is saved here
+    double first_b;  // Impact parameter sampled before the JIMWLK evolution is
+                     // saved here
 
     double jimwlk_alphas;  // 0 = running coupling, positive value = fixed
                            // coupling
     double m_jimwlk;
     double mu0_jimwlk;
     double LambdaQCD_jimwlk;
-    //int steps_jimwlk;
-    //int measureSteps_jimwlk;
+    // int steps_jimwlk;
+    // int measureSteps_jimwlk;
     double ds_jimwlk;
-    double x0_jimwlk; // Bjorken-x at the initial condition of the JIMLWK evolution
+    double x0_jimwlk;  // Bjorken-x at the initial condition of the JIMLWK
+                       // evolution
 
-    double jimwlk_x1; // Bjorken x for the nucleus A (projectile)
+    double jimwlk_x1;  // Bjorken x for the nucleus A (projectile)
     double jimwlk_x2;  // Bjorken x for the nucleus B (target)
+    std::vector<double> xSnapshotList_;
 
   public:
     // constructor:
@@ -291,7 +296,9 @@ class Parameters {
     void setSigmaNN(double x) { SigmaNN = x; }
     double getSigmaNN() { return SigmaNN; }
     void setb(double x) { b = x; }
-    double getb() { return b; }
+    double getb() const { return b; }
+    void setPhiRP(double x) { phiRP_ = x; }
+    double getPhiRP() const { return phiRP_; }
     void setbmin(double x) { bmin = x; }
     double getbmin() { return bmin; }
     void setbmax(double x) { bmax = x; }
@@ -518,7 +525,7 @@ class Parameters {
 
     double getFluxTubeNormalization() { return fluxtube_normalization; }
     void setFluxTubeNormalization(double x) { fluxtube_normalization = x; }
-    
+
     // JIMWLK functions
     void setm_jimwlk(double x) { m_jimwlk = x; };
     double getm_jimwlk() { return m_jimwlk; }
@@ -538,8 +545,8 @@ class Parameters {
     double GetJimwlk_x_projectile() { return jimwlk_x1; }
     void SetJimwlk_x_target(double x) { jimwlk_x2 = x; }
     double GetJimwlk_x_target() { return jimwlk_x2; }
-    //void setMeasureSteps_jimwlk(int x) { measureSteps_jimwlk = x; };
-    //int getMeasureSteps_jimwlk() { return measureSteps_jimwlk; }
+    // void setMeasureSteps_jimwlk(int x) { measureSteps_jimwlk = x; };
+    // int getMeasureSteps_jimwlk() { return measureSteps_jimwlk; }
     void setDs_jimwlk(double x) { ds_jimwlk = x; }
     double getDs_jimwlk() { return ds_jimwlk; }
     void setJimwlk_alphas(double as) { jimwlk_alphas = as; }
@@ -554,7 +561,7 @@ class Parameters {
             useJIMWLK = true;
         }
     }
-
-    
+    void setxSnapshotList(std::vector<double> xList) { xSnapshotList_ = xList; }
+    std::vector<double> getxSnapshotList() { return xSnapshotList_; }
 };
 #endif  // Parameters_H

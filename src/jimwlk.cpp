@@ -34,7 +34,6 @@ JIMWLK::JIMWLK(Parameters &param, Group *group, Lattice *lat, Random *random)
             VxsiVy_[i] = new Matrix(Nc_, 0);
         }
     }
-    evolution();
 }
 
 JIMWLK::~JIMWLK() {
@@ -76,7 +75,8 @@ void JIMWLK::initializeK() {
     }
 
     double mu0 = param_.getMu0_jimwlk();
-    double Lambda2 = param_.getLambdaQCD_jimwlk() * param_.getLambdaQCD_jimwlk();
+    double Lambda2 =
+        param_.getLambdaQCD_jimwlk() * param_.getLambdaQCD_jimwlk();
 
     for (int pos = 0; pos < Ncells_; pos++) {
         double x = pos / Ngrid_ - static_cast<double>(Ngrid_) / 2.;
@@ -153,7 +153,8 @@ double JIMWLK::getAlphas(const double x, const double y) const {
     const int Nf = 3;
     const double length = param_.getL();
     const double mu0 = param_.getMu0_jimwlk();
-    const double Lambda2 = param_.getLambdaQCD_jimwlk() * param_.getLambdaQCD_jimwlk();
+    const double Lambda2 =
+        param_.getLambdaQCD_jimwlk() * param_.getLambdaQCD_jimwlk();
     double phys_x = x * length;  // in fm
     double phys_y = y * length;
     double phys_r2 = phys_x * phys_x + phys_y * phys_y;
@@ -184,41 +185,73 @@ void JIMWLK::initializeNoise() {
 
 void JIMWLK::evolution() {
     initializeNoise();
-   
+
     // Calculate evolution steps for different nuclei
     double x0 = param_.getJimwlk_x0();
     double ds = param_.getDs_jimwlk();
-    int steps_1, steps_2;
-    if (param_.getJimwlk_alphas() > 1e-10)
-    {
+    std::vector<double> xSnapshotList = param_.getxSnapshotList();
+    double dlogx = M_PI * M_PI * ds;
+    int steps_1 = 0;
+    int steps_2 = 0;
+    double as = param_.getJimwlk_alphas();
+    if (as > 1e-10) {
         // Fixed coupling
-        double as = param_.getJimwlk_alphas();
-        
-        steps_1 = static_cast<int>(as * std::log(x0/param_.GetJimwlk_x_projectile()) / (M_PI*M_PI*ds)+0.5);
-        steps_2 = static_cast<int>(as * std::log(x0/param_.GetJimwlk_x_target()) / (M_PI*M_PI*ds)+0.5);
-    }
-    else {
+        steps_1 = static_cast<int>(
+            as * std::log(x0 / param_.GetJimwlk_x_projectile())
+                / (M_PI * M_PI * ds)
+            + 0.5);
+        steps_2 = static_cast<int>(
+            as * std::log(x0 / param_.GetJimwlk_x_target()) / (M_PI * M_PI * ds)
+            + 0.5);
+        dlogx = M_PI * M_PI * ds / as;
+    } else {
         // Running coupling
-        steps_1 = static_cast<int>(std::log(x0/param_.GetJimwlk_x_projectile()) / (M_PI*M_PI*ds)+0.5);
-        steps_2 = static_cast<int>(std::log(x0/param_.GetJimwlk_x_target()) / (M_PI*M_PI*ds)+0.5);
-
+        steps_1 = static_cast<int>(
+            std::log(x0 / param_.GetJimwlk_x_projectile()) / (M_PI * M_PI * ds)
+            + 0.5);
+        steps_2 = static_cast<int>(
+            std::log(x0 / param_.GetJimwlk_x_target()) / (M_PI * M_PI * ds)
+            + 0.5);
     }
 
-    std::cout << "Evolving projectile, evolution steps " << steps_1  << std::endl;
+    unsigned int iSnapshot = 0;
+    std::cout << "Evolving projectile, evolution steps " << steps_1
+              << std::endl;
     for (int ids = 0; ids < steps_1; ids++) {
-        if (ids % 50 == 0) {
+        int printSteps = steps_1 / 10;
+        if (ids % printSteps == 0) {
             std::cout << "Step " << ids << std::endl;
         }
+        double xLoc = x0 * exp(-ids * dlogx);
         evolutionStep();
+        if (iSnapshot < xSnapshotList.size()) {
+            if (xLoc > xSnapshotList[iSnapshot]
+                && xLoc * exp(-dlogx) < xSnapshotList[iSnapshot]) {
+                lat_ptr_->WriteInitialWilsonLines(
+                    "JIMWLK_x_" + std::to_string(xLoc), &param_);
+                iSnapshot++;
+            }
+        }
     }
     std::cout << "Done." << std::endl;
-    
-    std::cout << "Evolving target, evolution steps " << steps_2  << std::endl;
+
+    std::cout << "Evolving target, evolution steps " << steps_2 << std::endl;
+    iSnapshot = 0;
     for (int ids = 0; ids < steps_2; ids++) {
-        if (ids % 50 == 0) {
+        int printSteps = steps_2 / 10;
+        if (ids % printSteps == 0) {
             std::cout << "Step " << ids << std::endl;
         }
+        double xLoc = x0 * exp(-ids * dlogx);
         evolutionStep2();
+        if (iSnapshot < xSnapshotList.size()) {
+            if (xLoc > xSnapshotList[iSnapshot]
+                && xLoc * exp(-dlogx) < xSnapshotList[iSnapshot]) {
+                lat_ptr_->WriteInitialWilsonLines(
+                    "JIMWLK_x_" + std::to_string(xLoc), &param_);
+                iSnapshot++;
+            }
+        }
     }
     std::cout << "Done." << std::endl;
 }
@@ -362,4 +395,3 @@ void JIMWLK::evolutionStep2() {
             left.expm() * lat_ptr_->cells[i]->getU2() * right.expm());
     }
 }
-

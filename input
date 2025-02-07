@@ -1,8 +1,13 @@
 mode 1
 minimumQs2ST 0
 readMultFromFile 0
+<<<<<<< HEAD
 size 512
 L 5.12
+=======
+size 600
+L 40
+>>>>>>> ipglasma_jimwlk
 Nc 3
 m 0.4
 rmax 1000.
@@ -48,7 +53,7 @@ dR_np 0.0
 da_np 0.0
 nucleonPositionsFromFile 0
 NucleusQsTableFileName qs2Adj_vs_Tp_vs_Y_200.in
-QsmuRatio 0.8
+QsmuRatio 0.643
 samplebFromLinearDistribution 1
 runWith0Min1Avg2MaxQs 2
 runWithThisFactorTimesQs 0.5
@@ -73,10 +78,10 @@ inverseQsForMaxTime 0
 maxtime 0.0
 dtau 0.1
 LOutput 30
-sizeOutput 512
+sizeOutput 340
 etaSizeOutput 1
 detaOutput 0
-writeOutputs 5
+writeOutputs 1
 writeEvolution 0
 readInitialWilsonLines 0
 writeInitialWilsonLines 2
@@ -87,9 +92,10 @@ mu0_jimwlk 0.28
 simpleLangevin 1
 alphas_jimwlk 0
 jimwlk_ic_x 0.01
-x_projectile_jimwlk 0.01
-x_target_jimwlk 0.01
+x_projectile_jimwlk 0.0001
+x_target_jimwlk 0.0001
 Ds_jimwlk 0.005
 Lambda_QCD_jimwlk 0.040
 m_jimwlk 0.4
+xSnapshotList 0.01,0.005,0.001,0.0005,0.0001,0.00005,0.00001
 EndOfFile
