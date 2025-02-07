@@ -1,13 +1,8 @@
 mode 1
 minimumQs2ST 0
 readMultFromFile 0
-<<<<<<< HEAD
-size 512
-L 5.12
-=======
 size 600
 L 40
->>>>>>> ipglasma_jimwlk
 Nc 3
 m 0.4
 rmax 1000.
