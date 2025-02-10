@@ -733,7 +733,7 @@ double inthelperf_fluxtube_z(double z, void *p) {
         Vec dist = quark_to_b - projection;
 
         double tmpdensity =
-            par->init->QuarkThickness(dist.Len(), i, par->param);
+            par->init->QuarkThickness(dist.Len(), i, par->param) * par->Qsflucts[i];;
         density += tmpdensity;
 
         if (tmpdensity > maxdensity) maxdensity = tmpdensity;
@@ -768,7 +768,18 @@ double Init::FluxTubeThickness(
     inthelper_fluxtube par;
     par.init = this;
 
-    par.fermatpoint = GeometricMedian(hotspots);
+    try
+    {
+        par.fermatpoint = Vec::GeometricMedian(hotspots);
+    }
+    catch (const std::runtime_error& e) {  // Catch convergence errors
+        std::cerr << e.what() << std::endl;
+        exit(1); // Todo: could force to sample the event again.... 
+    } catch (...) {  // Catch any other unexpected exceptions
+        std::cerr << "An unknown error occurred!" << std::endl;
+        return 1;
+    }
+    
     par.param = param;
     par.quarks = hotspots;
     par.Qsflucts = Qsflucts;
@@ -792,7 +803,6 @@ double Init::QuarkThickness(double dist, int i, Parameters *param) {
     dist = dist * 5.068;  // I think at this point dist is in fm...
     double T = std::exp(-dist * dist / (2. * param->getBGq()))
                / (2. * M_PI * param->getBGq());
-    //     * gauss1[i][iq];
     if (isnan(T) or isinf(T)) {
         cout << "dist: " << dist << " i: " << i
              << " param->getBGq(): " << param->getBGq() << endl;
@@ -870,9 +880,6 @@ double Init::getNuclearQs2(double T, double y) {
 
 // set g^2\mu^2 as the sum of the individual nucleons' g^2\mu^2, using Q_s(b,y)
 // prop to g^mu(b,y)
-// Also compute N_part using Glauber
-// If param->getwhich_stage() == 2, then here we shift nuclei back to b=0 for
-// JIMLWK evolution
 void Init::setColorChargeDensity(
     Lattice *lat, Parameters *param, Random *random, Glauber *glauber) {
     messager.info("set color charge density ...");
@@ -1016,6 +1023,7 @@ void Init::setColorChargeDensity(
                 param, random, x_array, y_array, z_array, BGq_array);
             xq2.push_back(x_array);
             yq2.push_back(y_array);
+            zq2.push_back(z_array);
             BGq2.push_back(BGq_array);
         }
         int Npartons = std::max(1, static_cast<int>(x_array.size()));

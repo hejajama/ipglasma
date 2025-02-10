@@ -29,17 +29,21 @@ class Vec
         Vec& operator+=(Vec& v);
         Vec& operator-=(Vec& v);
         Vec& operator=(const Vec& v);
-        Vec operator+(const Vec& v);
-        Vec operator-(const Vec& v);
+        Vec operator+(const Vec& v) const;
+        Vec operator-(const Vec& v) const;
         Vec& operator*=(REAL c);
-        Vec operator*(REAL c);
+        Vec operator*(REAL c) const;
     
         void Rotate2D(double angle);  // rotate x,y coords counterclockwise
     
-        double operator*(Vec &v);   // dot product
+        double operator*(Vec &v) const;   // dot product
     
         REAL Len();
         REAL LenSqr();
+
+        // Geometry functions
+// Weiszfeld's algorithm to calculate geometric median (Fermat point)
+static Vec GeometricMedian(std::vector<Vec> &points);
     
     private:
         REAL x,y,z;
@@ -47,9 +51,7 @@ class Vec
 
 std::ostream& operator<<(std::ostream& os, Vec& ic);
 
-// Geometry functions
-// Weiszfeld's algorithm to calculate geometric median (Fermat point)
-Vec GeometricMedian(std::vector<Vec> &points);
+
 
 
 #endif //VEC_H

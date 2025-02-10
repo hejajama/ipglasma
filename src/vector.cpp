@@ -1,22 +1,18 @@
 /*
  * Simple class for 2D/3D vectors
  *
- * Heikki Mäntysaari <heikki.mantysaari@jyu.fi>, 2010
+ * Heikki Mäntysaari <heikki.mantysaari@jyu.fi>, 2010-2025
  */
 
 #include "vector.hpp"
 
 #include <cmath>
 #include <cstdlib>
-using std::cerr;
-using std::cout;
-using std::endl;
-
-using std::cerr;
-using std::cout;
-using std::endl;
+#include <stdexcept>
+#include <sstream>
 
 using namespace std;
+
 inline double SQR(double x) { return x * x; }
 
 // **********
@@ -73,7 +69,7 @@ Vec& Vec::operator=(const Vec& v) {
     return *this;
 }
 
-Vec Vec::operator+(const Vec& v) {
+Vec Vec::operator+(const Vec& v) const {
     Vec sum;
     sum.SetX(x + v.GetX());
     sum.SetY(y + v.GetY());
@@ -81,7 +77,7 @@ Vec Vec::operator+(const Vec& v) {
     return sum;
 }
 
-Vec Vec::operator-(const Vec& v) {
+Vec Vec::operator-(const Vec& v) const {
     Vec sum;
     sum.SetX(x - v.GetX());
     sum.SetY(y - v.GetY());
@@ -97,11 +93,11 @@ Vec& Vec::operator*=(REAL c) {
     return *this;
 }
 
-double Vec::operator*(Vec& v) {
+double Vec::operator*(Vec& v) const {
     return x * v.GetX() + y * v.GetY() + z * v.GetZ();
 }
 
-Vec Vec::operator*(REAL c) {
+Vec Vec::operator*(REAL c) const {
     Vec tmp(x * c, y * c, z * c);
     return tmp;
 }
@@ -131,7 +127,7 @@ void Vec::Rotate2D(double angle) {
 // Geometry
 // Weiszfeld's algorithm to calculate geometric median (Fermat point)
 // Ref. https://en.wikipedia.org/wiki/Geometric_median
-Vec GeometricMedian(std::vector<Vec>& points) {
+Vec Vec::GeometricMedian(std::vector<Vec>& points)  {
     // Convergence parameters: components can change relatively/absolutely less
     // than given values
     const double ITERACCURACY_REL = 0.001;
@@ -172,13 +168,15 @@ Vec GeometricMedian(std::vector<Vec>& points) {
     }
 
     if (!converged) {
-        cerr << "GeometricMedian() didn't converge!" << endl;
-        cerr << "Problematic points:" << endl;
+        stringstream error;
+        error << "Vector::GeometricMedian() didn't converge!" << endl;
+        error << "Problematic points:" << endl;
         for (unsigned int k = 0; k < points.size(); k++)
-            cout << points[k] << endl;
-        cerr << "Best estimate: " << endl;
-        cerr << y << endl;
-        exit(1);
+            error << points[k] << endl;
+        error << "Best estimate: " << endl;
+        error << y << endl;
+
+        throw std::runtime_error(error.str());
     }
 
     return y;

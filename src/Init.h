@@ -86,6 +86,8 @@ class Init {
     void setV(Lattice *lat, Parameters *param);
     void readVFromFile(Lattice *lat, Parameters *param, int format);
 
+    // Note: in the Stringy proton implementation Qs fluctuations are not included
+    // in the QuarkThickness() function
     double QuarkThickness(double dist, int i, Parameters *param);
 
     double FluxTubeThickness(
