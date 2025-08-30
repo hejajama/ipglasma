@@ -533,6 +533,10 @@ int readInput(
         setup->IFind(file_name, "polarizationProjectileJz"));
     param->setPolarizationTargetJz(
         setup->IFind(file_name, "polarizationTargetJz"));
+    if (param->getPolarizationTarget() != 0
+        || param->getPolarizationTarget() != 0) {
+        param->setNucleonPositionsFromFile(1);
+    }
     param->setg2mu(setup->DFind(file_name, "g2mu"));
     param->setMaxtime(setup->DFind(file_name, "maxtime"));
     double lattice_a = param->getL() / static_cast<double>(param->getSize());
