@@ -420,10 +420,33 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
     }
 
     // global rotation of the nucleus
-    // rotate_nucleus(random, nucleusA_);
-    // rotate_nucleus(random, nucleusB_);
-    rotate_nucleus_3D(random, nucleusA_);
-    rotate_nucleus_3D(random, nucleusB_);
+    if (param->getPolarizationProjectile() == 0) {
+        rotate_nucleus_3D(random, nucleusA_);
+    } else if (param->getPolarizationProjectile() == 1) {
+        // longitudinal polarization only rotates phi randomly
+        double phi = 2. * M_PI * random->genrand64_real3();
+        double theta = 0;
+        rotate_nucleus(phi, theta, nucleusA_);
+    } else if (param->getPolarizationProjectile() == 2) {
+        // transverse polarization rotates J to +y axis
+        double phi = M_PI / 2;
+        double theta = M_PI / 2;
+        rotate_nucleus(phi, theta, nucleusA_);
+    }
+
+    if (param->getPolarizationTarget() == 0) {
+        rotate_nucleus_3D(random, nucleusB_);
+    } else if (param->getPolarizationTarget() == 1) {
+        // longitudinal polarization only rotates phi randomly
+        double phi = 2. * M_PI * random->genrand64_real3();
+        double theta = 0;
+        rotate_nucleus(phi, theta, nucleusB_);
+    } else if (param->getPolarizationTarget() == 2) {
+        // transverse polarization rotates J to +y axis
+        double phi = M_PI / 2;
+        double theta = M_PI / 2;
+        rotate_nucleus(phi, theta, nucleusB_);
+    }
 }
 
 void Init::readNuclearQs(Parameters *param) {
@@ -539,12 +562,25 @@ void Init::readNuclearQs(Parameters *param) {
 
 void Init::readInNucleusConfigs(
     const int nucleusA, const int lightNucleusOption,
+    const int polarizationFlag, const double polJz,
     vector<vector<float>> &nucleonPosArr) {
     if (nucleonPosArr.size() > 0) return;
     std::string path = "nucleusConfigurations/";
     std::string fileName;
     bool readFlag = true;
-    if (nucleusA == 3) {
+    if (nucleusA == 2) {
+        fileName = "DeuteronPol0Configs.bin.in";
+        if ((std::abs(polJz) - 1) < 1e-8)
+            fileName = "DeuteronPolpm1Configs.bin.in";
+        if (polarizationFlag == 0) {
+            auto ran = random_ptr_->genrand64_real1();
+            if (ran < 0.3333) {
+                fileName = "DeuteronPol0Configs.bin.in";
+            } else {
+                fileName = "DeuteronPolpm1Configs.bin.in";
+            }
+        }
+    } else if (nucleusA == 3) {
         fileName = "He3.bin.in";
         if (lightNucleusOption == 1) fileName = "triton.bin.in";
     } else if (nucleusA == 4) {
@@ -2380,14 +2416,14 @@ void Init::init(
         readNuclearQs(param);
     }
 
-    if (param->getNucleonPositionsFromFile() == 1) {
-        readInNucleusConfigs(
-            static_cast<int>(glauber->nucleusA1()),
-            param->getlightNucleusOption(), nucleonPosArrA_);
-        readInNucleusConfigs(
-            static_cast<int>(glauber->nucleusA2()),
-            param->getlightNucleusOption(), nucleonPosArrB_);
-    }
+    readInNucleusConfigs(
+        static_cast<int>(glauber->nucleusA1()), param->getlightNucleusOption(),
+        param->getPolarizationProjectile(),
+        param->getPolarizationProjectileJz(), nucleonPosArrA_);
+    readInNucleusConfigs(
+        static_cast<int>(glauber->nucleusA2()), param->getlightNucleusOption(),
+        param->getPolarizationTarget(), param->getPolarizationTargetJz(),
+        nucleonPosArrB_);
 
     if (init_method == READ_WLINE_BINARY or init_method == READ_WLINE_TEXT) {
         // to read Wilson lines from file
@@ -3153,6 +3189,22 @@ void Init::assignProtons(std::vector<ReturnValue> &nucleus, const int Z) {
 void Init::rotate_nucleus(Random *random, std::vector<ReturnValue> &nucleus) {
     double phi_global = 2. * M_PI * random->genrand64_real3();
     double theta_global = acos(1. - 2. * random->genrand64_real3());
+    auto cth = cos(theta_global);
+    auto sth = sin(theta_global);
+    auto cphi = cos(phi_global);
+    auto sphi = sin(phi_global);
+    for (auto &n_i : nucleus) {
+        auto x_new = cth * cphi * n_i.x - sphi * n_i.y + sth * cphi * n_i.z;
+        auto y_new = cth * sphi * n_i.x + cphi * n_i.y + sth * sphi * n_i.z;
+        auto z_new = -sth * n_i.x + 0. * n_i.y + cth * n_i.z;
+        n_i.x = x_new;
+        n_i.y = y_new;
+        n_i.z = z_new;
+    }
+}
+
+void Init::rotate_nucleus(
+    double phi_global, double theta_global, std::vector<ReturnValue> &nucleus) {
     auto cth = cos(theta_global);
     auto sth = sin(theta_global);
     auto cphi = cos(phi_global);

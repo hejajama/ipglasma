@@ -94,6 +94,7 @@ class Init {
 
     void readInNucleusConfigs(
         const int nucleusA, const int lightNucleusOption,
+        const int polarizationFlag, const double polJz,
         vector<vector<float>> &nucleonPosArr);
     void generate_nucleus_configuration(
         Random *random, int A, int Z, double a_WS, double R_WS, double beta2,
@@ -128,6 +129,9 @@ class Init {
     void recenter_nucleus(std::vector<ReturnValue> &nucleus);
     void assignProtons(std::vector<ReturnValue> &nucleus, const int Z);
     void rotate_nucleus(Random *random, std::vector<ReturnValue> &nucleus);
+    void rotate_nucleus(
+        double phi_global, double theta_global,
+        std::vector<ReturnValue> &nucleus);
     void rotate_nucleus_3D(Random *random, std::vector<ReturnValue> &nucleus);
 
     void samplePartonPositions(
