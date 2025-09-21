@@ -610,6 +610,8 @@ void Init::readInNucleusConfigs(
         } else if (lightNucleusOption == 5) {
             fileName = "Ne20_NLEFT_dmin0.5fm_negativeweights.bin.in";
         }
+    } else if (nucleusA == 22) {
+        fileName = "Ne22_NLEFT.bin.in";
     } else if (nucleusA == 40) {
         fileName = "Ar40_VMC.bin.in";
         if (lightNucleusOption == 4) fileName = "Ar40_NLEFT.bin.in";
