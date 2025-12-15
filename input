@@ -1,7 +1,7 @@
 mode 1
 minimumQs2ST 0
 readMultFromFile 0
-size 800
+size 64
 L 30
 Nc 3
 m 0.4
@@ -20,8 +20,7 @@ useSmoothNucleus 0
 shiftConstituentQuarkProtonOrigin 1
 useConstituentQuarkProton 0
 NqFluc 0.0
-runningCoupling 0
-muZero 0.3
+runningCoupling 0 muZero 0.3
 c 0.2
 g2mu 0.1
 useFatTails 0
@@ -96,6 +95,7 @@ x_projectile_jimwlk 0.0001
 x_target_jimwlk 0.0001
 Ds_jimwlk 0.005
 Lambda_QCD_jimwlk 0.040
+wilsonLineDirectory ./
 m_jimwlk 0.4
 saveSnapshots 1
 xSnapshotList 5e-3,2e-3,0.0001,0.00005,0.00001

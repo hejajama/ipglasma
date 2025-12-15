@@ -97,6 +97,8 @@ class Parameters {
     int readInitialWilsonLines;  // decide wheter to generate initial Wilson
                                  // lines (0), or read these in plain text (1)
                                  // or in binary format (2)
+    std::string
+        wilsonLineDirectory;  // directory where Wilson lines are written to
     unsigned long long int randomSeed;  // stores the random seed used (so the
                                         // event can be reproduced)
     std::string
@@ -491,6 +493,8 @@ class Parameters {
     int getWriteEvolution() { return writeEvolution; }
     void setWriteWilsonLines(int x) { writeWilsonLines = x; }
     int getWriteWilsonLines() { return writeWilsonLines; }
+    std::string getWilsonLineDirectory() { return wilsonLineDirectory; }
+    void setWilsonLineDirectory(std::string dir) { wilsonLineDirectory = dir; }
     void setReadInitialWilsonLines(int x) { readInitialWilsonLines = x; }
     int getReadInitialWilsonLines() { return readInitialWilsonLines; }
     void setNucleonPositionsFromFile(int x) { nucleonPositionsFromFile = x; }

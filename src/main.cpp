@@ -360,12 +360,12 @@ int main(int argc, char *argv[]) {
 
             if (param->getWriteWilsonLines() > 0) {
                 std::stringstream s1;
-                s1 << "Final_x_"
+                s1 << param->getWilsonLineDirectory() << "/Final_x_"
                    << std::to_string(param->getJimwlk_x_projectile()) << "_";
                 lat.WriteWilsonLines(s1.str(), param, 1);  // nucleus A
                 std::stringstream s2;
-                s2 << "Final_x_" << std::to_string(param->getJimwlk_x_target())
-                   << "_";
+                s2 << param->getWilsonLineDirectory() << "/Final_x_"
+                   << std::to_string(param->getJimwlk_x_target()) << "_";
                 lat.WriteWilsonLines(s2.str(), param, 2);  // nucleus B
             }
         }
@@ -586,6 +586,8 @@ int readInput(
     param->setWriteOutputsToHDF5(setup->IFind(file_name, "writeOutputsToHDF5"));
     param->setWriteEvolution(setup->IFind(file_name, "writeEvolution"));
     param->setWriteWilsonLines(setup->IFind(file_name, "writeWilsonLines"));
+    param->setWilsonLineDirectory(
+        setup->StringFind(file_name, "wilsonLineDirectory"));
     param->setReadInitialWilsonLines(
         setup->IFind(file_name, "readInitialWilsonLines"));
     param->setAverageOverNuclei(

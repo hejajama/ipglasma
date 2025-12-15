@@ -1899,7 +1899,7 @@ void Init::setV(Lattice *lat, Parameters *param) {
     // output U
     if (param->getWriteWilsonLines() > 0 && param->getSaveSnapshots()) {
         std::stringstream ss;
-        ss << "Initial_x_";
+        ss << param->getWilsonLineDirectory() << "/Initial_x_";
         if (param->getUseJIMWLK()) {
             ss << param->getJimwlk_x0() << "_";
         } else {
