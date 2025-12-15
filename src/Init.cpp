@@ -634,6 +634,14 @@ void Init::readInNucleusConfigs(
     messager << "read in nucleus configurations from " << fileName;
     messager.flush("info");
     std::ifstream inFile(fileName, std::ios::binary);
+    if (!inFile.is_open()) {
+        messager << "Init::readInNucleusConfigs: File " << fileName
+                 << " not found. ";
+        messager << "Try to run (cd nucleusConfigurations; sh "
+                    "./download_nucleusTables.sh)";
+        messager.flush("error");
+        exit(1);
+    }
     while (true) {
         vector<float> tempPos;
         for (int i = 0; i < nucleusA; i++) {

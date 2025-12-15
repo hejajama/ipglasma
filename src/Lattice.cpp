@@ -4,6 +4,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "pretty_ostream.h"
+
 // constructor
 Lattice::Lattice(Parameters *param, int Nc, int length) {
     Nc_ = Nc;
@@ -89,6 +91,7 @@ void Lattice::WriteSU3Matricies(std::string fileprefix, Parameters *param) {
 
 void Lattice::WriteWilsonLines(
     std::string fileprefix, Parameters *param, const int iA) {
+    pretty_ostream messager;
     const double L = param->getL();
     const double a = L / static_cast<double>(N_);  // lattice spacing in fm
 
@@ -101,6 +104,14 @@ void Lattice::WriteWilsonLines(
     // Output in text
     if (param->getWriteWilsonLines() == 1) {
         std::ofstream foutU(strVOne_name.str().c_str(), std::ios::out);
+
+        if (!foutU.is_open()) {
+            messager << " Lattice::WriteWilsonLines Error: can't open "
+                     << strVOne_name.str() << " for writing";
+            messager.flush("error");
+            exit(1);
+        }
+
         foutU.precision(15);
 
         for (int ix = 0; ix < N_; ix++) {
@@ -124,6 +135,14 @@ void Lattice::WriteWilsonLines(
         std::ofstream Outfile1;
         Outfile1.open(
             strVOne_name.str().c_str(), std::ios::out | std::ios::binary);
+
+        if (!Outfile1.is_open()) {
+            messager << " Lattice::WriteWilsonLines Error: can't open "
+                     << strVOne_name.str()
+                     << " for writing (directory does not exist?)";
+            messager.flush("error");
+            exit(1);
+        }
 
         double temp = param->getRapidityA();
         if (iA == 2) temp = param->getRapidityB();
