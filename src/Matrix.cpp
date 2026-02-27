@@ -628,13 +628,11 @@ std::string Matrix::MatrixToString() {
 
 double Matrix::FrobeniusNorm() {
     int n = this->getNDim();
-    Matrix Q(n);
-    Q = *this;
     double norm = 0.;
 
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            norm = abs(Q(i, j)) * abs(Q(i, j));
+            norm += abs((*this)(i, j)) * abs((*this)(i, j));
         }
     }
 
@@ -645,21 +643,19 @@ double Matrix::FrobeniusNorm() {
 
 double Matrix::OneNorm() {
     int n = this->getNDim();
-    Matrix Q(n);
-    Q = *this;
-    double norm[3];
-    double onenorm;
+    double maxColSum = 0.0;
 
     for (int j = 0; j < n; j++) {
+        double colSum = 0.0;
+
         for (int i = 0; i < n; i++) {
-            norm[j] = abs(Q(i, j));
+            colSum += abs((*this)(i, j));
         }
+
+        maxColSum = std::max(maxColSum, colSum);
     }
 
-    onenorm = std::max(norm[0], norm[1]);
-    onenorm = std::max(onenorm, norm[2]);
-
-    return onenorm;
+    return maxColSum;
 }
 
 Matrix &Matrix::inv() {

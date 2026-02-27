@@ -671,7 +671,7 @@ void Init::samplePartonPositions(
     const double dq_min_sq = dq_min * dq_min;
 
     vector<double> r_array(Nq, 0.);
-    BGq_array.resize(Nq, BGq);
+    BGq_array.assign(Nq, BGq);
     for (int iq = 0; iq < Nq; iq++) {
         double xq = sqrtBG * random->Gauss();
         double yq = sqrtBG * random->Gauss();
@@ -3259,7 +3259,7 @@ void Init::sampleQsNormalization(
     Random *random, Parameters *param, const int Nq,
     vector<double> &gauss_array) {
     const double QsSmearWidth = param->getSmearingWidth();
-    gauss_array.resize(Nq, 1.);  // default norm = 1
+    gauss_array.assign(Nq, 1.);  // default norm = 1
     if (param->getSmearQs() == 1) {
         // introduce a log-normal distribution for Qs normalization
         // dividing by exp(0.5 sigma^2) to ensure the mean is 1
