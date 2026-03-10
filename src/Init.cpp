@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <cmath>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -110,6 +111,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             rv.x = -rv.x;
             rv.y = -rv.y;
             rv.z = -rv.z;
+            rv.proton = 0;
             rv.collided = 0;
             nucleusA_.push_back(rv);
         } else {
@@ -185,7 +187,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 }
                 nucleusA_.push_back(rv);
             }
-            assignProtons(nucleusA_, glauber->nucleusZ1());
+            assignProtons(random, nucleusA_, glauber->nucleusZ1());
             recenter_nucleus(nucleusA_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -224,7 +226,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 }
                 nucleusB_.push_back(rv);
             }
-            assignProtons(nucleusB_, glauber->nucleusZ2());
+            assignProtons(random, nucleusB_, glauber->nucleusZ2());
             recenter_nucleus(nucleusB_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -297,7 +299,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             exit(1);
         }
 
-        cout << "Reading nucleon positions for nuceus A from file " << fileName
+        cout << "Reading nucleon positions for nucleus A from file " << fileName
              << " ... " << endl;
 
         // sample the position in the file
@@ -389,7 +391,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 
         // go to the correct line in the file
         fin.seekg(std::ios::beg);
-        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA1(); ++i) {
+        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA2(); ++i) {
             fin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
         // am now at the correct line in the file
@@ -420,6 +422,11 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
         }
 
         fin.close();
+
+        // The files provide only coordinates.
+        // Assign proton/neutron labels
+        assignProtons(random, nucleusA_, glauber->nucleusZ1());
+        assignProtons(random, nucleusB_, glauber->nucleusZ2());
 
         param->setA1FromFile(A);
         param->setA2FromFile(A2);
@@ -1352,11 +1359,11 @@ void Init::setColorChargeDensity(
                     if (param->getUseFluctuatingx() == 1) {
                         // iterative loops here to determine the fluctuating Y
                         // _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-
-                        while (abs(Ydeviation) > 0.001) {
+                        while (std::abs(Ydeviation) > 0.001) {
                             if (localrapidity >= 0) {
                                 QsA = sqrt(getNuclearQs2(
                                     lat->cells[localpos]->getTpA(),
-                                    abs(localrapidity)));
+                                    localrapidity));
                             } else {
                                 xVal = QsA * param->getxFromThisFactorTimesQs()
                                        / param->getRoots() * exp(yIn);
@@ -1402,11 +1409,11 @@ void Init::setColorChargeDensity(
 
                         localrapidity = rapidity;
                         Ydeviation = 10000;
-                        while (abs(Ydeviation) > 0.001) {
+                        while (std::abs(Ydeviation) > 0.001) {
                             if (localrapidity >= 0)
                                 QsB = sqrt(getNuclearQs2(
                                     lat->cells[localpos]->getTpB(),
-                                    abs(localrapidity)));
+                                    localrapidity));
                             else {
                                 xVal = QsB * param->getxFromThisFactorTimesQs()
                                        / param->getRoots() * exp(-yIn);
@@ -1566,6 +1573,16 @@ void Init::setColorChargeDensity(
                    / hbarc;  // now this quantity is in fm^-2
                              // remember: Tp is in GeV^2
         }
+    }
+
+    if (count == 0) {
+        param->setAverageQs(0.);
+        param->setAverageQsAvg(0.);
+        param->setAverageQsmin(0.);
+        param->setTpp(Tpp);
+        param->setSuccess(0);
+        cout << "**** Rejected event - no overlap region (count=0)." << endl;
+        return;
     }
 
     averageQs /= static_cast<double>(count);
@@ -2862,7 +2879,7 @@ void Init::generate_nucleus_configuration_with_woods_saxon(
         if (idx_array[i] < Z) {
             rv.proton = 1;
         } else {
-            rv.proton = 1;
+            rv.proton = 0;
         }
         nucleus.push_back(rv);
     }
@@ -3175,9 +3192,14 @@ void Init::recenter_nucleus(std::vector<ReturnValue> &nucleus) {
     }
 }
 
-void Init::assignProtons(std::vector<ReturnValue> &nucleus, const int Z) {
+void Init::assignProtons(
+    Random *random, std::vector<ReturnValue> &nucleus, const int Z) {
     // randomly assign Z nucleons to be protons inside the nucleus
-    std::random_shuffle(nucleus.begin(), nucleus.end());
+    // Fisher–Yates shuffle using the existing Random instance.
+    for (int i = static_cast<int>(nucleus.size()) - 1; i > 0; --i) {
+        const int j = static_cast<int>(random->genrand64_real2() * (i + 1));
+        std::swap(nucleus[i], nucleus[j]);
+    }
     for (unsigned int i = 0; i < nucleus.size(); i++) {
         if (static_cast<int>(i) < std::abs(Z)) {
             nucleus.at(i).proton = 1;
