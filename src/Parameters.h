@@ -149,11 +149,19 @@ class Parameters {
     int lightNucleusOption;  // for light nuclei (carbon, oxygen): 1:
                              // Woods-Saxon; 2: variational MC; 3: alpha
                              // clusters
-    int useGaussian;         // use a Gaussian profile on top of the constant
-                             // background
-    double dtau;             // time step in lattice units
-    double maxtime;          // maximal evolution time in fm/c
-    int Npart;               // Number of participants
+
+    int polarizationFlagProjectile_;  // 0: unpolarized; 1: longitudinal
+                                      // polarized; 2: transverse
+    int polarizationFlagTarget_;  // 0: unpolarized; 1: longitudinal polarized;
+                                  // 2: transverse
+    double polJzProjectile_;      // The Jz polarization of the projectile
+    double polJzTarget_;          // The Jz polarization of the target
+
+    int useGaussian;        // use a Gaussian profile on top of the constant
+                            // background
+    double dtau;            // time step in lattice units
+    double maxtime;         // maximal evolution time in fm/c
+    int Npart;              // Number of participants
     int averageOverNuclei;  // average over this many nuclei to get a smooth(er)
                             // distribution
     int nucleonPositionsFromFile;  // switch to determine whether to sample
@@ -426,6 +434,14 @@ class Parameters {
     int getUseGaussian() { return useGaussian; }
     void setlightNucleusOption(int x) { lightNucleusOption = x; };
     int getlightNucleusOption() { return lightNucleusOption; }
+    void setPolarizationProjectile(int x) { polarizationFlagProjectile_ = x; };
+    int getPolarizationProjectile() { return polarizationFlagProjectile_; }
+    void setPolarizationTarget(int x) { polarizationFlagTarget_ = x; };
+    int getPolarizationTarget() { return polarizationFlagTarget_; }
+    void setPolarizationProjectileJz(double x) { polJzProjectile_ = x; };
+    double getPolarizationProjectileJz() { return polJzProjectile_; }
+    void setPolarizationTargetJz(double x) { polJzTarget_ = x; };
+    double getPolarizationTargetJz() { return polJzTarget_; }
     void setRunWithQs(int x) { runWithQs = x; };
     int getRunWithQs() { return runWithQs; }
     void setRunWithkt(int x) { runWithkt = x; };

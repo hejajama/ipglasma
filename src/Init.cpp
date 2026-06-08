@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <cmath>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -110,6 +111,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             rv.x = -rv.x;
             rv.y = -rv.y;
             rv.z = -rv.z;
+            rv.proton = 0;
             rv.collided = 0;
             nucleusA_.push_back(rv);
         } else {
@@ -185,7 +187,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 }
                 nucleusA_.push_back(rv);
             }
-            assignProtons(nucleusA_, glauber->nucleusZ1());
+            assignProtons(random, nucleusA_, glauber->nucleusZ1());
             recenter_nucleus(nucleusA_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -224,7 +226,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 }
                 nucleusB_.push_back(rv);
             }
-            assignProtons(nucleusB_, glauber->nucleusZ2());
+            assignProtons(random, nucleusB_, glauber->nucleusZ2());
             recenter_nucleus(nucleusB_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -297,7 +299,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             exit(1);
         }
 
-        cout << "Reading nucleon positions for nuceus A from file " << fileName
+        cout << "Reading nucleon positions for nucleus A from file " << fileName
              << " ... " << endl;
 
         // sample the position in the file
@@ -389,7 +391,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 
         // go to the correct line in the file
         fin.seekg(std::ios::beg);
-        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA1(); ++i) {
+        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA2(); ++i) {
             fin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
         // am now at the correct line in the file
@@ -421,6 +423,11 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 
         fin.close();
 
+        // The files provide only coordinates.
+        // Assign proton/neutron labels
+        assignProtons(random, nucleusA_, glauber->nucleusZ1());
+        assignProtons(random, nucleusB_, glauber->nucleusZ2());
+
         param->setA1FromFile(A);
         param->setA2FromFile(A2);
     } else {
@@ -432,10 +439,33 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
     }
 
     // global rotation of the nucleus
-    // rotate_nucleus(random, nucleusA_);
-    // rotate_nucleus(random, nucleusB_);
-    rotate_nucleus_3D(random, nucleusA_);
-    rotate_nucleus_3D(random, nucleusB_);
+    if (param->getPolarizationProjectile() == 0) {
+        rotate_nucleus_3D(random, nucleusA_);
+    } else if (param->getPolarizationProjectile() == 1) {
+        // longitudinal polarization only rotates phi randomly
+        double phi = 2. * M_PI * random->genrand64_real3();
+        double theta = 0;
+        rotate_nucleus(phi, theta, nucleusA_);
+    } else if (param->getPolarizationProjectile() == 2) {
+        // transverse polarization rotates J to +y axis
+        double phi = M_PI / 2;
+        double theta = M_PI / 2;
+        rotate_nucleus(phi, theta, nucleusA_);
+    }
+
+    if (param->getPolarizationTarget() == 0) {
+        rotate_nucleus_3D(random, nucleusB_);
+    } else if (param->getPolarizationTarget() == 1) {
+        // longitudinal polarization only rotates phi randomly
+        double phi = 2. * M_PI * random->genrand64_real3();
+        double theta = 0;
+        rotate_nucleus(phi, theta, nucleusB_);
+    } else if (param->getPolarizationTarget() == 2) {
+        // transverse polarization rotates J to +y axis
+        double phi = M_PI / 2;
+        double theta = M_PI / 2;
+        rotate_nucleus(phi, theta, nucleusB_);
+    }
 }
 
 void Init::readNuclearQs(Parameters *param) {
@@ -551,33 +581,61 @@ void Init::readNuclearQs(Parameters *param) {
 
 void Init::readInNucleusConfigs(
     const int nucleusA, const int lightNucleusOption,
+    const int polarizationFlag, const double polJz,
     vector<vector<float>> &nucleonPosArr) {
     if (nucleonPosArr.size() > 0) return;
     std::string path = "nucleusConfigurations/";
     std::string fileName;
     bool readFlag = true;
-    if (nucleusA == 3) {
-        fileName = "He3.bin.in";
-    } else if (nucleusA == 12) {
-        if (lightNucleusOption == 2) {
-            fileName = "C12_VMC.bin.in";
-        } else if (lightNucleusOption == 3) {
-            fileName = "C12_alphaCluster.bin.in";
+    if (nucleusA == 2) {
+        fileName = "DeuteronPol0Configs.bin.in";
+        if ((std::abs(polJz) - 1) < 1e-8)
+            fileName = "DeuteronPolpm1Configs.bin.in";
+        if (polarizationFlag == 0) {
+            auto ran = random_ptr_->genrand64_real1();
+            if (ran < 0.3333) {
+                fileName = "DeuteronPol0Configs.bin.in";
+            } else {
+                fileName = "DeuteronPolpm1Configs.bin.in";
+            }
         }
+    } else if (nucleusA == 3) {
+        fileName = "He3.bin.in";
+        if (lightNucleusOption == 1) fileName = "triton.bin.in";
+    } else if (nucleusA == 4) {
+        fileName = "He4.bin.in";
+    } else if (nucleusA == 12) {
+        fileName = "C12_VMC.bin.in";
+        if (lightNucleusOption == 1) fileName = "C12_alphaCluster.bin.in";
     } else if (nucleusA == 16) {
-        if (lightNucleusOption == 2) {
-            fileName = "O16_VMC.bin.in";
-        } else if (lightNucleusOption == 3) {
+        fileName = "O16_VMC.bin.in";
+        if (lightNucleusOption == 1) {
             fileName = "O16_alphaCluster.bin.in";
+        } else if (lightNucleusOption == 2) {
+            fileName = "O16_PGCM_clustered_dmin0.bin.in";
+        } else if (lightNucleusOption == 3) {
+            fileName = "O16_PGCM_uniform_dmin0.bin.in";
         } else if (lightNucleusOption == 4) {
-            fileName = "O16_PGCM.bin.in";
+            fileName = "O16_NLEFT_dmin0.5fm_positiveweights.bin.in";
         } else if (lightNucleusOption == 5) {
-            fileName = "O16_NLEFT.bin.in";
+            fileName = "O16_NLEFT_dmin0.5fm_negativeweights.bin.in";
         }
     } else if (nucleusA == 20) {
-        fileName = "Ne20_PGCM.bin.in";
+        fileName = "Ne20_PGCM_clustered_dmin0.bin.in";
+        if (lightNucleusOption == 3) {
+            fileName = "Ne20_PGCM_uniform_dmin0.bin.in";
+        } else if (lightNucleusOption == 4) {
+            fileName = "Ne20_NLEFT_dmin0.5fm_positiveweights.bin.in";
+        } else if (lightNucleusOption == 5) {
+            fileName = "Ne20_NLEFT_dmin0.5fm_negativeweights.bin.in";
+        }
     } else if (nucleusA == 40) {
         fileName = "Ar40_VMC.bin.in";
+        if (lightNucleusOption == 4) fileName = "Ar40_NLEFT.bin.in";
+    } else if (nucleusA == 197) {
+        fileName = "Au197.bin.in";
+    } else if (nucleusA == 208) {
+        fileName = "Pb208.bin.in";
     } else {
         readFlag = false;
     }
@@ -620,7 +678,7 @@ void Init::samplePartonPositions(
     const double dq_min_sq = dq_min * dq_min;
 
     vector<double> r_array(Nq, 0.);
-    BGq_array.resize(Nq, BGq);
+    BGq_array.assign(Nq, BGq);
     for (int iq = 0; iq < Nq; iq++) {
         double xq = sqrtBG * random->Gauss();
         double yq = sqrtBG * random->Gauss();
@@ -1301,11 +1359,11 @@ void Init::setColorChargeDensity(
                     if (param->getUseFluctuatingx() == 1) {
                         // iterative loops here to determine the fluctuating Y
                         // _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-
-                        while (abs(Ydeviation) > 0.001) {
+                        while (std::abs(Ydeviation) > 0.001) {
                             if (localrapidity >= 0) {
                                 QsA = sqrt(getNuclearQs2(
                                     lat->cells[localpos]->getTpA(),
-                                    abs(localrapidity)));
+                                    localrapidity));
                             } else {
                                 xVal = QsA * param->getxFromThisFactorTimesQs()
                                        / param->getRoots() * exp(yIn);
@@ -1351,11 +1409,11 @@ void Init::setColorChargeDensity(
 
                         localrapidity = rapidity;
                         Ydeviation = 10000;
-                        while (abs(Ydeviation) > 0.001) {
+                        while (std::abs(Ydeviation) > 0.001) {
                             if (localrapidity >= 0)
                                 QsB = sqrt(getNuclearQs2(
                                     lat->cells[localpos]->getTpB(),
-                                    abs(localrapidity)));
+                                    localrapidity));
                             else {
                                 xVal = QsB * param->getxFromThisFactorTimesQs()
                                        / param->getRoots() * exp(-yIn);
@@ -1515,6 +1573,16 @@ void Init::setColorChargeDensity(
                    / hbarc;  // now this quantity is in fm^-2
                              // remember: Tp is in GeV^2
         }
+    }
+
+    if (count == 0) {
+        param->setAverageQs(0.);
+        param->setAverageQsAvg(0.);
+        param->setAverageQsmin(0.);
+        param->setTpp(Tpp);
+        param->setSuccess(0);
+        cout << "**** Rejected event - no overlap region (count=0)." << endl;
+        return;
     }
 
     averageQs /= static_cast<double>(count);
@@ -2353,9 +2421,11 @@ void Init::init(
 
     readInNucleusConfigs(
         static_cast<int>(glauber->nucleusA1()), param->getlightNucleusOption(),
-        nucleonPosArrA_);
+        param->getPolarizationProjectile(),
+        param->getPolarizationProjectileJz(), nucleonPosArrA_);
     readInNucleusConfigs(
         static_cast<int>(glauber->nucleusA2()), param->getlightNucleusOption(),
+        param->getPolarizationTarget(), param->getPolarizationTargetJz(),
         nucleonPosArrB_);
 
     // sample nucleon positions
@@ -2809,7 +2879,7 @@ void Init::generate_nucleus_configuration_with_woods_saxon(
         if (idx_array[i] < Z) {
             rv.proton = 1;
         } else {
-            rv.proton = 1;
+            rv.proton = 0;
         }
         nucleus.push_back(rv);
     }
@@ -3122,9 +3192,14 @@ void Init::recenter_nucleus(std::vector<ReturnValue> &nucleus) {
     }
 }
 
-void Init::assignProtons(std::vector<ReturnValue> &nucleus, const int Z) {
+void Init::assignProtons(
+    Random *random, std::vector<ReturnValue> &nucleus, const int Z) {
     // randomly assign Z nucleons to be protons inside the nucleus
-    std::random_shuffle(nucleus.begin(), nucleus.end());
+    // Fisher–Yates shuffle using the existing Random instance.
+    for (int i = static_cast<int>(nucleus.size()) - 1; i > 0; --i) {
+        const int j = static_cast<int>(random->genrand64_real2() * (i + 1));
+        std::swap(nucleus[i], nucleus[j]);
+    }
     for (unsigned int i = 0; i < nucleus.size(); i++) {
         if (static_cast<int>(i) < std::abs(Z)) {
             nucleus.at(i).proton = 1;
@@ -3137,6 +3212,22 @@ void Init::assignProtons(std::vector<ReturnValue> &nucleus, const int Z) {
 void Init::rotate_nucleus(Random *random, std::vector<ReturnValue> &nucleus) {
     double phi_global = 2. * M_PI * random->genrand64_real3();
     double theta_global = acos(1. - 2. * random->genrand64_real3());
+    auto cth = cos(theta_global);
+    auto sth = sin(theta_global);
+    auto cphi = cos(phi_global);
+    auto sphi = sin(phi_global);
+    for (auto &n_i : nucleus) {
+        auto x_new = cth * cphi * n_i.x - sphi * n_i.y + sth * cphi * n_i.z;
+        auto y_new = cth * sphi * n_i.x + cphi * n_i.y + sth * sphi * n_i.z;
+        auto z_new = -sth * n_i.x + 0. * n_i.y + cth * n_i.z;
+        n_i.x = x_new;
+        n_i.y = y_new;
+        n_i.z = z_new;
+    }
+}
+
+void Init::rotate_nucleus(
+    double phi_global, double theta_global, std::vector<ReturnValue> &nucleus) {
     auto cth = cos(theta_global);
     auto sth = sin(theta_global);
     auto cphi = cos(phi_global);
@@ -3190,7 +3281,7 @@ void Init::sampleQsNormalization(
     Random *random, Parameters *param, const int Nq,
     vector<double> &gauss_array) {
     const double QsSmearWidth = param->getSmearingWidth();
-    gauss_array.resize(Nq, 1.);  // default norm = 1
+    gauss_array.assign(Nq, 1.);  // default norm = 1
     if (param->getSmearQs() == 1) {
         // introduce a log-normal distribution for Qs normalization
         // dividing by exp(0.5 sigma^2) to ensure the mean is 1
