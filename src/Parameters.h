@@ -68,8 +68,10 @@ class Parameters {
                         // nucleus A
     double QsmuRatioB;  // ratio between Qs and mu: Q_s = QsmuRatio * g^2 mu for
                         // nucleus B
-    double rapidity;  // rapidity to use when getting Q_s from IPSat. Basically
-                      // to pick x for now
+    double rapidityA_;  // rapidity to use when getting Q_s from IPSat.
+                        // Basically to pick x for now
+    double rapidityB_;  // rapidity to use when getting Q_s from IPSat.
+                        // Basically to pick x for now
     int usePseudoRapidity;  // if selected (1) the variable 'rapidity' will
                             // contain the pseudorapidity and the right
                             // conversion will be done (incl. Jacobian)
@@ -87,14 +89,14 @@ class Parameters {
                        // output files (like hydro input data)
     int writeOutputsToHDF5;  // decide whether to write (1) or not write (0)
                              // output files to one hdf5 file
-    int writeEvolution;  // decide whether to write (1) or not write (0) time
-                         // dependent quantities like the anisotropy
-    int writeInitialWilsonLines;  // decide whether to write (1) in text or (2)
-                                  // in binary format or not write (0) generated
-                                  // Wilson lines (before any evolution)
-    int readInitialWilsonLines;   // decide wheter to generate initial Wilson
-                                  // lines (0), or read these in plain text (1)
-                                  // or in binary format (2)
+    int writeEvolution;    // decide whether to write (1) or not write (0) time
+                           // dependent quantities like the anisotropy
+    int writeWilsonLines;  // decide whether to write (1) in text or (2)
+                           // in binary format or not write (0) generated
+                           // Wilson lines (before any evolution)
+    int readInitialWilsonLines;  // decide wheter to generate initial Wilson
+                                 // lines (0), or read these in plain text (1)
+                                 // or in binary format (2)
     unsigned long long int randomSeed;  // stores the random seed used (so the
                                         // event can be reproduced)
     std::string
@@ -105,7 +107,8 @@ class Parameters {
     double BGq_;     // the mean width of the Gaussian describing the shape of
                      // a constituent quark in GeV^(-2)
     double BGqVar_;  // the variance of the Gaussian width describing the shape
-                     // of a constituent quark in GeV^(-4)
+    double omega_;
+    // of a constituent quark in GeV^(-4)
     double dq_min_;  // the minimum distance between valence quarks [fm]
     double muZero;   // mu_0 in the running coupling (makes it infrared finite)
     double c;  // determines how smooth the cutoff in the running coupling is
@@ -138,6 +141,7 @@ class Parameters {
     double b;            // impact parameter
     double bmin;         // minimum impact parameter to sample from
     double bmax;         // maximum impact parameter to sample to
+    double phiRP_;       // the reaction plane angle
     int linearb;         // sample b from a linear distribution if 1, uniform
                          // distribution otherwise
     std::string Target;  // target nucleus' name
@@ -149,11 +153,19 @@ class Parameters {
     int lightNucleusOption;  // for light nuclei (carbon, oxygen): 1:
                              // Woods-Saxon; 2: variational MC; 3: alpha
                              // clusters
-    int useGaussian;         // use a Gaussian profile on top of the constant
-                             // background
-    double dtau;             // time step in lattice units
-    double maxtime;          // maximal evolution time in fm/c
-    int Npart;               // Number of participants
+
+    int polarizationFlagProjectile_;  // 0: unpolarized; 1: longitudinal
+                                      // polarized; 2: transverse
+    int polarizationFlagTarget_;  // 0: unpolarized; 1: longitudinal polarized;
+                                  // 2: transverse
+    double polJzProjectile_;      // The Jz polarization of the projectile
+    double polJzTarget_;          // The Jz polarization of the target
+
+    int useGaussian;        // use a Gaussian profile on top of the constant
+                            // background
+    double dtau;            // time step in lattice units
+    double maxtime;         // maximal evolution time in fm/c
+    int Npart;              // Number of participants
     int averageOverNuclei;  // average over this many nuclei to get a smooth(er)
                             // distribution
     int nucleonPositionsFromFile;  // switch to determine whether to sample
@@ -164,7 +176,7 @@ class Parameters {
     int useFixedNpart;  // if 0 do not demand a given N_part, if >1 sample the
                         // initial configuration until the given N_part is
                         // reached
-    double rnp;         // distance between proton and neutron in the transverse
+    double rnp = 0.;    // distance between proton and neutron in the transverse
                         // projection of the deuteron
     int smearQs;  // decide whether to smear Q_s using a Poisson distribution
                   // around its mean at every x_T (1) or not (0)
@@ -212,23 +224,27 @@ class Parameters {
 
     bool computeGluonMultiplicity_;  // flag to compute gluonMultiplicity
 
-    bool useJIMWLK; // flag to use JIMWLK evolution
+    bool useJIMWLK;  // flag to use JIMWLK evolution
     bool simpleLangevin_;
     int which_stage;
-    double first_b; // Impact parameter sampled before the JIMWLK evolution is saved here
+    double first_b;  // Impact parameter sampled before the JIMWLK evolution is
+                     // saved here
 
     double jimwlk_alphas;  // 0 = running coupling, positive value = fixed
                            // coupling
     double m_jimwlk;
     double mu0_jimwlk;
     double LambdaQCD_jimwlk;
-    //int steps_jimwlk;
-    //int measureSteps_jimwlk;
+    // int steps_jimwlk;
+    // int measureSteps_jimwlk;
     double ds_jimwlk;
-    double x0_jimwlk; // Bjorken-x at the initial condition of the JIMLWK evolution
+    double x0_jimwlk;  // Bjorken-x at the initial condition of the JIMLWK
+                       // evolution
 
-    double jimwlk_x1; // Bjorken x for the nucleus A (projectile)
+    double jimwlk_x1;  // Bjorken x for the nucleus A (projectile)
     double jimwlk_x2;  // Bjorken x for the nucleus B (target)
+    bool saveSnapshots_;
+    std::vector<double> xSnapshotList_;
 
   public:
     // constructor:
@@ -290,7 +306,9 @@ class Parameters {
     void setSigmaNN(double x) { SigmaNN = x; }
     double getSigmaNN() { return SigmaNN; }
     void setb(double x) { b = x; }
-    double getb() { return b; }
+    double getb() const { return b; }
+    void setPhiRP(double x) { phiRP_ = x; }
+    double getPhiRP() const { return phiRP_; }
     void setbmin(double x) { bmin = x; }
     double getbmin() { return bmin; }
     void setbmax(double x) { bmax = x; }
@@ -311,8 +329,11 @@ class Parameters {
     double getQsmuRatio() { return QsmuRatio; }
     void setQsmuRatioB(double x) { QsmuRatioB = x; }
     double getQsmuRatioB() { return QsmuRatioB; }
-    void setRapidity(double x) { rapidity = x; }
-    double getRapidity() { return rapidity; }
+    void setRapidityA(double x) { rapidityA_ = x; }
+    double getRapidityA() const { return rapidityA_; }
+    void setRapidityB(double x) { rapidityB_ = x; }
+    double getRapidityB() const { return rapidityB_; }
+    double getRapidity() const { return (rapidityA_ + rapidityB_) / 2.; }
     void setMaxtime(double x) { maxtime = x; }
     double getMaxtime() { return maxtime; }
     void setdtau(double x) { dtau = x; }
@@ -349,6 +370,8 @@ class Parameters {
     double getBGq() { return BGq_; }
     void setBGqVar(double BGqVar) { BGqVar_ = BGqVar; }
     double getBGqVar() { return BGqVar_; }
+    void setOmega(double x) { omega_ = x; }
+    double getOmega() const { return omega_; }
     void setDqmin(double dq_min) { dq_min_ = dq_min; }
     double getDqmin() { return dq_min_; }
     void setMuZero(double x) { muZero = x; }
@@ -444,6 +467,14 @@ class Parameters {
     int getUseGaussian() { return useGaussian; }
     void setlightNucleusOption(int x) { lightNucleusOption = x; };
     int getlightNucleusOption() { return lightNucleusOption; }
+    void setPolarizationProjectile(int x) { polarizationFlagProjectile_ = x; };
+    int getPolarizationProjectile() { return polarizationFlagProjectile_; }
+    void setPolarizationTarget(int x) { polarizationFlagTarget_ = x; };
+    int getPolarizationTarget() { return polarizationFlagTarget_; }
+    void setPolarizationProjectileJz(double x) { polJzProjectile_ = x; };
+    double getPolarizationProjectileJz() { return polJzProjectile_; }
+    void setPolarizationTargetJz(double x) { polJzTarget_ = x; };
+    double getPolarizationTargetJz() { return polJzTarget_; }
     void setRunWithQs(int x) { runWithQs = x; };
     int getRunWithQs() { return runWithQs; }
     void setRunWithkt(int x) { runWithkt = x; };
@@ -458,8 +489,8 @@ class Parameters {
     int getWriteOutputsToHDF5() { return writeOutputsToHDF5; }
     void setWriteEvolution(int x) { writeEvolution = x; };
     int getWriteEvolution() { return writeEvolution; }
-    void setWriteInitialWilsonLines(int x) { writeInitialWilsonLines = x; }
-    int getWriteInitialWilsonLines() { return writeInitialWilsonLines; }
+    void setWriteWilsonLines(int x) { writeWilsonLines = x; }
+    int getWriteWilsonLines() { return writeWilsonLines; }
     void setReadInitialWilsonLines(int x) { readInitialWilsonLines = x; }
     int getReadInitialWilsonLines() { return readInitialWilsonLines; }
     void setNucleonPositionsFromFile(int x) { nucleonPositionsFromFile = x; }
@@ -514,7 +545,7 @@ class Parameters {
     void set_firstb(double x) { first_b = x; }
     double get_firstb() { return first_b; }
     int get_added_lines() { return 4; }
-    
+
     // JIMWLK functions
     void setm_jimwlk(double x) { m_jimwlk = x; };
     double getm_jimwlk() { return m_jimwlk; }
@@ -530,12 +561,12 @@ class Parameters {
     bool getSimpleLangevin() const { return simpleLangevin_; }
     void setLambdaQCD_jimwlk(double x) { LambdaQCD_jimwlk = x; }
     double getLambdaQCD_jimwlk() { return LambdaQCD_jimwlk; }
-    void SetJimwlk_x_projectile(double x) { jimwlk_x1 = x; }
-    double GetJimwlk_x_projectile() { return jimwlk_x1; }
-    void SetJimwlk_x_target(double x) { jimwlk_x2 = x; }
-    double GetJimwlk_x_target() { return jimwlk_x2; }
-    //void setMeasureSteps_jimwlk(int x) { measureSteps_jimwlk = x; };
-    //int getMeasureSteps_jimwlk() { return measureSteps_jimwlk; }
+    void setJimwlk_x_projectile(double x) { jimwlk_x1 = x; }
+    double getJimwlk_x_projectile() { return jimwlk_x1; }
+    void setJimwlk_x_target(double x) { jimwlk_x2 = x; }
+    double getJimwlk_x_target() { return jimwlk_x2; }
+    // void setMeasureSteps_jimwlk(int x) { measureSteps_jimwlk = x; };
+    // int getMeasureSteps_jimwlk() { return measureSteps_jimwlk; }
     void setDs_jimwlk(double x) { ds_jimwlk = x; }
     double getDs_jimwlk() { return ds_jimwlk; }
     void setJimwlk_alphas(double as) { jimwlk_alphas = as; }
@@ -550,7 +581,14 @@ class Parameters {
             useJIMWLK = true;
         }
     }
-
-    
+    void setxSnapshotList(std::vector<double> xList) { xSnapshotList_ = xList; }
+    std::vector<double> getxSnapshotList() { return xSnapshotList_; }
+    void setSaveSnapshots(int x) {
+        if (x == 0)
+            saveSnapshots_ = false;
+        else
+            saveSnapshots_ = true;
+    }
+    bool getSaveSnapshots() { return saveSnapshots_; }
 };
 #endif  // Parameters_H

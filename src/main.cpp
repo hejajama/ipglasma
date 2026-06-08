@@ -125,6 +125,7 @@ int main(int argc, char *argv[]) {
                  << " read from list.";
         messager.flush("info");
     }
+    random->setGammaIncCDF(param->getOmega());
 
     // event loop starts ...
     for (int iev = 0; iev < nev; iev++) {
@@ -165,7 +166,7 @@ int main(int argc, char *argv[]) {
         fout1.close();
 
         // initialize init object
-        Init init(nn);
+        Init init(nn, param->getNc());
 
         // initialize group
         Group group(param->getNc());
@@ -335,78 +336,75 @@ int main(int argc, char *argv[]) {
 
         // allocate lattice
         Lattice lat(param, param->getNc(), param->getSize());
-        //JIMWLK jimwlkSolver(*param, &group, &lat, random);// passing the wilson line from Init.cpp to JIMWLK U2, Ux, Uy... Note, wenbin
         messager.info("Lattice generated.");
 
-        while (param->getSuccess() == 0) {
-            param->setSuccess(0);
+        param->setSuccess(0);
 
-            // initialize gsl random number generator (used for non-Gaussian
-            // distributions)
-            // random->gslRandomInit(rnum);
+        // initialize U-fields on the lattice
+        Initialization_method init_method;
+        if (param->getReadInitialWilsonLines() == 0) {
+            init_method = SAMPLE_COLOR_CHARGES;
+        } else {
+            init_method = (param->getReadInitialWilsonLines() == 1)
+                              ? READ_WLINE_TEXT
+                              : READ_WLINE_BINARY;
+        }
+        // First generate the V
+        init.init(&lat, &group, param, random, &glauber, init_method);
 
-            // initialize U-fields on the lattice
-            Initialization_method init_method;
-            if (param->getReadInitialWilsonLines() == 0) {
-                init_method = SAMPLE_COLOR_CHARGES;
-            } else {
-                init_method = (param->getReadInitialWilsonLines() == 1)
-                                  ? READ_WLINE_TEXT
-                                  : READ_WLINE_BINARY;
+        if (param->getUseJIMWLK()) {
+            messager.info("Start JIMWLK");
+            JIMWLK jimwlkSolver(*param, &group, &lat, random);
+            jimwlkSolver.evolution();
+            messager.info("Finish JIMWLK");
+
+            if (param->getWriteWilsonLines() > 0) {
+                std::stringstream s1;
+                s1 << "Final_x_"
+                   << std::to_string(param->getJimwlk_x_projectile()) << "_";
+                lat.WriteWilsonLines(s1.str(), param, 1);  // nucleus A
+                std::stringstream s2;
+                s2 << "Final_x_" << std::to_string(param->getJimwlk_x_target())
+                   << "_";
+                lat.WriteWilsonLines(s2.str(), param, 2);  // nucleus B
             }
-            init.init(
-                &lat, &group, param, random, &glauber,
-                init_method);  // First generate the V
-            messager.info("Generate V done.");
+        }
 
-            if (param->getSuccess() == 0) {
-                continue;
+        if (param->getMode() == 1) {
+            while (param->getSuccess() == 0) {
+                // sample collision impact parameter
+                // and compute Npart, Ncoll,etc, and check if there was a
+                // collision
+                init.sampleImpactParameter(param);
+                init.computeCollisionGeometryQuantities(&lat, param);
             }
-
-            if (param->getUseJIMWLK()) {
-                messager.info("Start JIMWLK");
-                JIMWLK jimwlkSolver(*param, &group, &lat, random);
-                messager.info("Finish JIMWLK");
-
-                if (param->getWriteInitialWilsonLines())
-                    init.WriteInitialWilsonLines("evolved_", &lat, param);
-            }
-            init.init(
-                &lat, &group, param, random, &glauber,
-                INITIALIZE_AFTER_JIMWLK);  // Note: negative value for the last
-                                           // parameter (READFROMFILE)
-                                           // corresponds to
-            // 2nd stage in the JIMWLK evolution setup
-            // This is necessary also if the JIMWLK evolution is not done, as
-            // only at this point one shifts the nuclei based on the sampled
-            // impact parameter
-            messager.info("2nd stage initialization after JIMWLK done");
-
+            init.shiftFieldsWithImpactParameter(&lat, param);
+            init.initializeForwardLightCone(&lat, param);
             messager.info("Start CYM evolution");
             // do the CYM evolution of the initialized fields using parmeters in
             // param
             evolution.run(&lat, &group, param);
         }
+    }
 
 #ifndef DISABLEMPI
-        MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 #endif
 
-        messager.info("One event finished");
-        if (param->getWriteOutputsToHDF5() == 1) {
-            int status = 0;
-            stringstream h5output_filename;
-            h5output_filename << "RESULTS_rank" << rank;
-            stringstream collect_command;
-            collect_command << "python3 utilities/combine_events_into_hdf5.py ."
-                            << " --output_filename " << h5output_filename.str()
-                            << " --event_id " << param->getEventId();
-            status = system(collect_command.str().c_str());
-            messager << "finished system call to python script with status: "
-                     << status;
-            messager.flush("info");
-            h5Flag = 1;
-        }
+    messager.info("One event finished");
+    if (param->getWriteOutputsToHDF5() == 1) {
+        int status = 0;
+        stringstream h5output_filename;
+        h5output_filename << "RESULTS_rank" << rank;
+        stringstream collect_command;
+        collect_command << "python3 utilities/combine_events_into_hdf5.py ."
+                        << " --output_filename " << h5output_filename.str()
+                        << " --event_id " << param->getEventId();
+        status = system(collect_command.str().c_str());
+        messager << "finished system call to python script with status: "
+                 << status;
+        messager.flush("info");
+        h5Flag = 1;
     }
 
     delete random;
@@ -508,6 +506,7 @@ int readInput(
     param->setBGq(setup->DFind(file_name, "BGq"));
     param->setBGqVar(setup->DFind(file_name, "BGqVar"));
     param->setDqmin(setup->DFind(file_name, "dqMin"));
+    param->setOmega(setup->DFind(file_name, "omega"));
     param->setMuZero(setup->DFind(file_name, "muZero"));
     param->setc(setup->DFind(file_name, "c"));
     param->setSize(setup->IFind(file_name, "size"));
@@ -551,10 +550,22 @@ int readInput(
         setup->IFind(file_name, "computeGluonMultiplicity"));
     param->setQsmuRatio(setup->DFind(file_name, "QsmuRatio"));
     param->setUsePseudoRapidity(setup->DFind(file_name, "usePseudoRapidity"));
-    param->setRapidity(setup->DFind(file_name, "Rapidity"));
+    param->setRapidityA(setup->DFind(file_name, "RapidityA"));
+    param->setRapidityB(setup->DFind(file_name, "RapidityB"));
     param->setUseNucleus(setup->IFind(file_name, "useNucleus"));
     param->setUseGaussian(setup->IFind(file_name, "useGaussian"));
     param->setlightNucleusOption(setup->IFind(file_name, "lightNucleusOption"));
+    param->setPolarizationProjectile(
+        setup->IFind(file_name, "polariztionProjectile"));
+    param->setPolarizationTarget(setup->IFind(file_name, "polariztionTarget"));
+    param->setPolarizationProjectileJz(
+        setup->IFind(file_name, "polarizationProjectileJz"));
+    param->setPolarizationTargetJz(
+        setup->IFind(file_name, "polarizationTargetJz"));
+    if (param->getPolarizationTarget() != 0
+        || param->getPolarizationTarget() != 0) {
+        param->setNucleonPositionsFromFile(1);
+    }
     param->setg2mu(setup->DFind(file_name, "g2mu"));
     param->setMaxtime(setup->DFind(file_name, "maxtime"));
     double lattice_a = param->getL() / static_cast<double>(param->getSize());
@@ -574,8 +585,7 @@ int readInput(
     param->setWriteOutputs(setup->IFind(file_name, "writeOutputs"));
     param->setWriteOutputsToHDF5(setup->IFind(file_name, "writeOutputsToHDF5"));
     param->setWriteEvolution(setup->IFind(file_name, "writeEvolution"));
-    param->setWriteInitialWilsonLines(
-        setup->IFind(file_name, "writeInitialWilsonLines"));
+    param->setWriteWilsonLines(setup->IFind(file_name, "writeWilsonLines"));
     param->setReadInitialWilsonLines(
         setup->IFind(file_name, "readInitialWilsonLines"));
     param->setAverageOverNuclei(
@@ -606,15 +616,18 @@ int readInput(
     param->setUseJIMWLK(setup->IFind(file_name, "useJIMWLK"));
     param->setSimpleLangevin(setup->IFind(file_name, "simpleLangevin"));
     param->setMu0_jimwlk(setup->DFind(file_name, "mu0_jimwlk"));
-    param->setLambdaQCD_jimwlk(setup->DFind(file_name,"Lambda_QCD_jimwlk")); // in units of g^2mu
-    param->setm_jimwlk(setup->DFind(file_name,"m_jimwlk"));
-    param->setJimwlk_alphas(setup->IFind(file_name,"alphas_jimwlk"));
-    param->setDs_jimwlk(setup->DFind(file_name,"Ds_jimwlk"));
-    param->SetJimwlk_x_projectile(setup->DFind(file_name,"x_projectile_jimwlk"));
-    param->SetJimwlk_x_target(setup->DFind(file_name,"x_target_jimwlk"));
-    param->setJimwlk_x0(setup->DFind(file_name,"jimwlk_ic_x"));
-    
-    
+    param->setLambdaQCD_jimwlk(
+        setup->DFind(file_name, "Lambda_QCD_jimwlk"));  // in units of g^2mu
+    param->setm_jimwlk(setup->DFind(file_name, "m_jimwlk"));
+    param->setJimwlk_alphas(setup->IFind(file_name, "alphas_jimwlk"));
+    param->setDs_jimwlk(setup->DFind(file_name, "Ds_jimwlk"));
+    param->setJimwlk_x_projectile(
+        setup->DFind(file_name, "x_projectile_jimwlk"));
+    param->setJimwlk_x_target(setup->DFind(file_name, "x_target_jimwlk"));
+    param->setJimwlk_x0(setup->DFind(file_name, "jimwlk_ic_x"));
+    param->setSaveSnapshots(setup->IFind(file_name, "saveSnapshots"));
+    param->setxSnapshotList(setup->ListFind(file_name, "xSnapshotList"));
+
     if (rank == 0) cout << "done." << endl;
 
     return 0;

@@ -65,6 +65,17 @@ void Glauber::FindNucleusData2(
         nucleus->beta3 = 0.;
         nucleus->beta4 = 0.0;
         nucleus->gamma = 0.;
+    } else if (name.compare("He4") == 0) {
+        nucleus->A = 4;
+        nucleus->Z = 2;
+        densityFunction = "readFromFile";
+        nucleus->R_WS = 0;
+        nucleus->w_WS = 0;
+        nucleus->a_WS = 0;
+        nucleus->beta2 = 0.0;
+        nucleus->beta3 = 0.;
+        nucleus->beta4 = 0.0;
+        nucleus->gamma = 0.;
     } else if (name.compare("d") == 0) {
         nucleus->A = 2;
         nucleus->Z = 1;
@@ -105,6 +116,17 @@ void Glauber::FindNucleusData2(
         nucleus->R_WS = 2.8;
         nucleus->w_WS = 0.0;
         nucleus->a_WS = 0.57;
+        nucleus->beta2 = 0.0;
+        nucleus->beta3 = 0.;
+        nucleus->beta4 = 0.0;
+        nucleus->gamma = 0.;
+    } else if (name.compare("Ne22") == 0) {
+        nucleus->A = 22;
+        nucleus->Z = 10;
+        densityFunction = "3Fermi";
+        nucleus->R_WS = 2.782;
+        nucleus->w_WS = 0.0;
+        nucleus->a_WS = 0.549;
         nucleus->beta2 = 0.0;
         nucleus->beta3 = 0.;
         nucleus->beta4 = 0.0;

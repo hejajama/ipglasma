@@ -409,7 +409,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
             u(lat, param, it, true);
         }
 
-        if (it % 10 == 0) {
+        if (it % 10 == 1) {
             cout << "Evolving to time " << it * a * dtau << " fm/c" << endl;
         }
 
@@ -4222,8 +4222,12 @@ int Evolution::correlations(
     const int phiBins = 16;
     double n[bins][phiBins];  // |k_T|, phi array
     //  double n2[bins][phiBins]; // |k_T|, phi array
-    double nkxky[N][N];  // kx, ky array
-    double nk[bins];     //|k_T| array
+    std::vector<std::vector<double>> nkxky;  // kx, ky array
+    nkxky.resize(N);
+    for (int i = 0; i < N; i++) {
+        nkxky[i].resize(N, 0);
+    }
+    double nk[bins];  //|k_T| array
     // double nNoMixedTerms[bins][phiBins]; //|k_T|, phi array
     // double nkNoMixedTerms[bins]; //|k_T| array
     // int counter[bins][phiBins];
