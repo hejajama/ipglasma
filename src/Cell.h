@@ -15,26 +15,26 @@ class Cell {
     // nucleus A
     double g2mu2A;  // color charge density of nucleus A
     double TpA;     // sum over the proton T(b) in this cell for nucleus A
-    Matrix *U;  // U is in the fundamental rep. (Nc*Nc matrix) // duobles as x
+    Matrix U;  // U is in the fundamental rep. (Nc*Nc matrix) // duobles as x
                 // component of electric field
 
     // nucleus B
     double g2mu2B;  // color charge density of nucleus B
     double TpB;     // sum over the proton T(b) in this cell for nucleus B
-    Matrix *U2;  // Ui is the initial U in the fundamental rep. (Nc*Nc matrix)
+    Matrix U2;  // Ui is the initial U in the fundamental rep. (Nc*Nc matrix)
                  // // doubles as y component of electric field
 
-    Matrix *Ux;  // U is in the fundamental rep. (Nc*Nc matrix)
-    Matrix *Uy;  // U is in the fundamental rep. (Nc*Nc matrix)
+    Matrix Ux;  // U is in the fundamental rep. (Nc*Nc matrix)
+    Matrix Uy;  // U is in the fundamental rep. (Nc*Nc matrix)
 
-    Matrix *Ux1;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 1 (also
+    Matrix Ux1;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 1 (also
                   // room to save g, the gauge fixing matrix)
-    Matrix *Uy1;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 1 (also
+    Matrix Uy1;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 1 (also
                   // room to save Uplaq, the plaquette)
 
-    Matrix *Ux2;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 2
+    Matrix Ux2;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 2
                   // (doubles as longitudinal electric field pi)
-    Matrix *Uy2;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 2
+    Matrix Uy2;  // U is in the fundamental rep. (Nc*Nc matrix) nucleus 2
                   // (doubles as scalar field (longitudinal) )
 
     //  bool parity; // Parity of the cell (needed for Gauge fixing)
@@ -85,18 +85,18 @@ class Cell {
     double getTpA() { return TpA; };
     double getTpB() { return TpB; };
 
-    void setU(const Matrix &x) { *U = x; };
-    void setU2(const Matrix &x) { *U2 = x; };
+    void setU(const Matrix &x) { U = x; };
+    void setU2(const Matrix &x) { U2 = x; };
     void setUplaq(const Matrix &x) {
-        *Uy1 = x;
+        Uy1 = x;
     };  // using unused Uy1 to store Uplaq
 
-    void setUx(const Matrix &x) { *Ux = x; };
-    void setUy(const Matrix &x) { *Uy = x; };
-    void setUx1(const Matrix &x) { *Ux1 = x; };
-    void setUy1(const Matrix &x) { *Uy1 = x; };
-    void setUx2(const Matrix &x) { *Ux2 = x; };
-    void setUy2(const Matrix &x) { *Uy2 = x; };
+    void setUx(const Matrix &x) { Ux = x; };
+    void setUy(const Matrix &x) { Uy = x; };
+    void setUx1(const Matrix &x) { Ux1 = x; };
+    void setUy1(const Matrix &x) { Uy1 = x; };
+    void setUx2(const Matrix &x) { Ux2 = x; };
+    void setUy2(const Matrix &x) { Uy2 = x; };
 
     void setEpsilon(const double in) { epsilon = in; };
     double getEpsilon() { return epsilon; };
@@ -152,43 +152,43 @@ class Cell {
     void setueta(const double in) { ueta = in; };
     double getueta() { return ueta; };
 
-    Matrix &getg() const { return *Ux1; };  // use unused Ux1 to store g
-    Matrix &getU() const { return *U; };
-    Matrix &getUx() const { return *Ux; };
-    Matrix &getUy() const { return *Uy; };
-    Matrix &getU2() const { return *U2; };
-    Matrix &getUx1() const { return *Ux1; };
-    Matrix &getUy1() const { return *Uy1; };
-    Matrix &getUx2() const { return *Ux2; };
-    Matrix &getUy2() const { return *Uy2; };
-    Matrix &getUplaq() const { return *Uy1; };  // use unused Uy1 to store Uplaq
+    Matrix &getg() { return Ux1; };  // use unused Ux1 to store g
+    Matrix &getU() { return U; };
+    Matrix &getUx() { return Ux; };
+    Matrix &getUy() { return Uy; };
+    Matrix &getU2() { return U2; };
+    Matrix &getUx1() { return Ux1; };
+    Matrix &getUy1() { return Uy1; };
+    Matrix &getUx2() { return Ux2; };
+    Matrix &getUy2() { return Uy2; };
+    Matrix &getUplaq() { return Uy1; };  // use unused Uy1 to store Uplaq
 
-    void setE1(const Matrix &x) { *U = x; };  // use unused U to store E1
-    Matrix &getE1() const { return *U; };
-    void setE2(const Matrix &x) { *U2 = x; };  // use unused U2 to store E2
-    Matrix &getE2() const { return *U2; };
-    void setphi(const Matrix &x) { *Uy2 = x; };  // use unused Uy2 to store phi
-    Matrix &getphi() const { return *Uy2; };
-    void setpi(const Matrix &x) { *Ux2 = x; };  // use unused Ux2 to store pi
-    Matrix &getpi() const { return *Ux2; };
-    void setg(const Matrix &x) { *Ux1 = x; };  // using unused Ux1 to store g
+    void setE1(const Matrix &x) { U = x; };  // use unused U to store E1
+    Matrix &getE1() { return U; };
+    void setE2(const Matrix &x) { U2 = x; };  // use unused U2 to store E2
+    Matrix &getE2() { return U2; };
+    void setphi(const Matrix &x) { Uy2 = x; };  // use unused Uy2 to store phi
+    Matrix &getphi() { return Uy2; };
+    void setpi(const Matrix &x) { Ux2 = x; };  // use unused Ux2 to store pi
+    Matrix &getpi() { return Ux2; };
+    void setg(const Matrix &x) { Ux1 = x; };  // using unused Ux1 to store g
 
     //  void computeAdjointU();
 };
 
 class SmallCell {
   private:
-    Matrix *buffer1;
-    Matrix *buffer2;
+    Matrix buffer1;
+    Matrix buffer2;
 
   public:
     SmallCell(const int Nc);
     ~SmallCell();
 
-    Matrix &getbuffer1() const { return *buffer1; };
-    void setbuffer1(const Matrix &x) { *buffer1 = x; };
-    Matrix &getbuffer2() const { return *buffer2; };
-    void setbuffer2(const Matrix &x) { *buffer2 = x; };
+    Matrix &getbuffer1() { return buffer1; };
+    void setbuffer1(const Matrix &x) { buffer1 = x; };
+    Matrix &getbuffer2() { return buffer2; };
+    void setbuffer2(const Matrix &x) { buffer2 = x; };
 };
 
 #endif

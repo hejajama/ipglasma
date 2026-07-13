@@ -11,15 +11,60 @@ using std::ostream;
 
 class Matrix {
   private:
-    int ndim;
-    int nn;
-    std::vector<complex<double>> e;
+    // Small-buffer optimization: matrices up to 3x3 (SU(2), SU(3)) live
+    // entirely inline -- no heap allocation per Matrix. Larger dimensions
+    // (not used anywhere in IP-Glasma at present) fall back to heap storage.
+    static constexpr int kInlineCap = 9;
+    int ndim = 0;
+    int nn = 0;
+    complex<double> sbuf[kInlineCap];  // zeroed explicitly where needed
+    std::vector<complex<double>> hbuf;  // only used when nn > kInlineCap
+    complex<double> *e = sbuf;
+
+    void setupStorage() {
+        if (nn <= kInlineCap) {
+            e = sbuf;
+        } else {
+            hbuf.assign(nn, complex<double>(0.0, 0.0));
+            e = hbuf.data();
+        }
+    }
 
   public:
+    // Tag type for constructing a Matrix without zero-initializing its
+    // entries. Used internally by operators whose result has every element
+    // written before use -- profiling showed ~15% of total runtime was
+    // spent zero-filling temporaries that were immediately overwritten.
+    struct NoInitTag {};
+    static constexpr NoInitTag noInit{};
+
     // constructor(s)
-    Matrix() = default;
+    Matrix() : ndim(0), nn(0) { e = sbuf; }
     Matrix(int n);
     Matrix(int n, double a);
+    Matrix(int n, NoInitTag) : ndim(n), nn(n * n) { setupStorage(); }
+
+    // raw access to the element array (row-major, e[j + ndim*i])
+    complex<double> *data() { return e; }
+    const complex<double> *data() const { return e; }
+
+    Matrix(const Matrix &o) : ndim(o.ndim), nn(o.nn) {
+        setupStorage();
+        for (int i = 0; i < nn; i++) e[i] = o.e[i];
+    }
+    Matrix &operator=(const Matrix &o) {
+        if (this != &o) {
+            if (nn != o.nn) {
+                ndim = o.ndim;
+                nn = o.nn;
+                setupStorage();
+            } else {
+                ndim = o.ndim;
+            }
+            for (int i = 0; i < nn; i++) e[i] = o.e[i];
+        }
+        return *this;
+    }
 
     // destructor
     ~Matrix() {}

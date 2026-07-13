@@ -27,8 +27,9 @@ class Lattice {
     // functions to access values within individual cells
     int getSize() { return size; };
 
-    std::vector<Cell *> cells;  // the actual array of cells, the "lattice".
-                                // cells is an array of pointers to cell objects
+    std::vector<Cell *> cells;  // pointers into cellStorage, kept for
+                                // interface compatibility (cells[pos]->...)
+    std::vector<Cell> cellStorage;  // contiguous storage of all cells
 
     std::vector<int> posmX;
     std::vector<int> pospX;
@@ -48,9 +49,8 @@ class BufferLattice {
     // destructor
     ~BufferLattice();
 
-    std::vector<SmallCell *> cells;
-    // the actual array of cells, the "lattice".
-    // cells is an array of pointers to cell objects
+    std::vector<SmallCell *> cells;  // pointers into cellStorage
+    std::vector<SmallCell> cellStorage;  // contiguous storage of all cells
 };
 
 #endif

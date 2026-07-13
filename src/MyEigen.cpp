@@ -45,12 +45,60 @@ void MyEigen::flowVelocity4D(
     double averageeps = 0.;
     count = 0;
 
-    for (int si = 0; si < N; si++) {
-        for (int sj = 0; sj < N; sj++) {
-            x = -L / 2. + a * si;
-            y = -L / 2. + a * sj;
+    // The per-cell flow-velocity solve is now independent across cells (the
+    // velocity carryover that previously serialized it has been removed via the
+    // rest-frame reset below), so it is parallelized over the lattice. Each
+    // thread allocates its own GSL workspace/eigenvalue/eigenvector objects
+    // once. All per-cell writes touch only cells[pos], so every DATA-FILE
+    // output is bit-for-bit identical to the serial version regardless of
+    // thread count. The four diagnostic averages (printed to stdout only) use
+    // an OpenMP reduction whose summation order differs from serial, so those
+    // logged numbers may differ in their last bits -- no data file is affected.
+    (void)pos;
+    (void)square;
+    (void)factor;
+    (void)euklidiansquare;
+    (void)z_aux;
+    (void)tau2;
+    (void)changeSign;
+    (void)foundU;
+    (void)x;
+    (void)y;
+    (void)ux;
+    (void)uy;
+    (void)ueta;
+    (void)utau;
+    (void)eps;
 
-            pos = si * N + sj;
+#pragma omp parallel reduction(+ : averageux, averageuy, averageueta, \
+                                   averageeps, count)
+    {
+        gsl_vector_complex *eval_ws = gsl_vector_complex_alloc(4);
+        gsl_matrix_complex *evec_ws = gsl_matrix_complex_alloc(4, 4);
+        gsl_eigen_nonsymmv_workspace *w_ws = gsl_eigen_nonsymmv_alloc(4);
+
+#pragma omp for
+        for (int posLoop = 0; posLoop < N * N; posLoop++) {
+            int si = posLoop / N;
+            int sj = posLoop % N;
+            int pos = posLoop;
+            double x = -L / 2. + a * si;
+            double y = -L / 2. + a * sj;
+            (void)x;
+            (void)y;
+            // Flow velocity defaults to the local rest frame (0,0,0,1):
+            // zero spatial flow, u^tau = 1. (See note in the serial version:
+            // this also removes the old cross-cell carryover bug.)
+            double ux = 0., uy = 0., ueta = 0., utau = 1.;
+            double eps = 0.;
+            int changeSign;
+            int foundU;
+            gsl_complex square;
+            gsl_complex factor;
+            gsl_complex euklidiansquare;
+            gsl_complex z_aux;
+            gsl_complex tau2;
+
             GSL_SET_COMPLEX(&square, 0, 0);
             // one upper, one lower index
             double data[] = {
@@ -77,21 +125,13 @@ void MyEigen::flowVelocity4D(
 
             gsl_matrix_view m = gsl_matrix_view_array(data, 4, 4);  // matrix
 
-            gsl_vector_complex *eval = gsl_vector_complex_alloc(
-                4);  // eigenvalues are components of this vector
-            gsl_matrix_complex *evec = gsl_matrix_complex_alloc(
-                4, 4);  // eigenvectors are columns of this matrix
-
-            gsl_eigen_nonsymmv_workspace *w =
-                gsl_eigen_nonsymmv_alloc(4);  // workspace
+            gsl_vector_complex *eval = eval_ws;
+            gsl_matrix_complex *evec = evec_ws;
 
             gsl_eigen_nonsymmv(
                 &m.matrix, eval, evec,
-                w);  // solve for eigenvalues and eigenvectors (without
-                     // 'v' only compute eigenvalues)
-
-            gsl_eigen_nonsymmv_free(
-                w);  // free memory associated with workspace
+                w_ws);  // solve for eigenvalues and eigenvectors (without
+                        // 'v' only compute eigenvalues)
 
             // set to 'zero'
             lat->cells[pos]->setEpsilon(lat->cells[pos]->getTtautau());
@@ -307,11 +347,12 @@ void MyEigen::flowVelocity4D(
                 lat->cells[pos]->setpiyeta(
                     lat->cells[pos]->getTyeta() - 4. / 3. * eps * uy * ueta);
             }
+        }  // omp for over posLoop
 
-            gsl_vector_complex_free(eval);
-            gsl_matrix_complex_free(evec);
-        }
-    }
+        gsl_eigen_nonsymmv_free(w_ws);
+        gsl_vector_complex_free(eval_ws);
+        gsl_matrix_complex_free(evec_ws);
+    }  // omp parallel
 
     cout << it * dtau * a << " average u^x=" << sqrt(averageux / averageeps)
          << endl;

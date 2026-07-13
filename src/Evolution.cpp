@@ -183,6 +183,13 @@ void Evolution::evolveE(
     const int N = param->getSize();
     const double g = param->getg();
 
+    // Loop-invariant coefficients, computed once instead of per cell. The
+    // arithmetic that consumes them below is written in the identical order,
+    // so results are bit-for-bit unchanged.
+    const complex<double> coeffPlaq = complex<double>(0., 1.) * tau * dtau
+                                      / (2. * g * g);
+    const complex<double> coeffComm = complex<double>(0., 1.) * dtau / tau;
+
 #pragma omp parallel
     {
         Matrix Ux(Nc);
@@ -257,8 +264,7 @@ void Evolution::evolveE(
 
             temp2 = phiN * phi - phi * phiN;
 
-            En += complex<double>(0., 1.) * tau * dtau / (2. * g * g) * temp1
-                  + complex<double>(0., 1.) * dtau / tau * temp2;
+            En += coeffPlaq * temp1 + coeffComm * temp2;
 
             trace = En.trace();
             En -= (trace / static_cast<double>(Nc)) * one;
@@ -282,8 +288,7 @@ void Evolution::evolveE(
             temp2 = phiN * phi - phi * phiN;
 
             En = lat->cells[pos]->getE2();
-            En += complex<double>(0., 1.) * tau * dtau / (2. * g * g) * temp1
-                  + complex<double>(0., 1.) * dtau / tau * temp2;
+            En += coeffPlaq * temp1 + coeffComm * temp2;
 
             trace = En.trace();
             En -= (trace / static_cast<double>(Nc)) * one;
@@ -445,12 +450,12 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
                     y = -L / 2. + a * iy;
 
                     if (param->getRunningCoupling()) {
-                        if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                             g2mu2A = lat->cells[pos]->getg2mu2A();
                         } else
                             g2mu2A = 0;
 
-                        if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                             g2mu2B = lat->cells[pos]->getg2mu2B();
                         } else
                             g2mu2B = 0;
@@ -527,12 +532,12 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
                     y = -L / 2. + a * iy;
 
                     if (param->getRunningCoupling()) {
-                        if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                             g2mu2A = lat->cells[pos]->getg2mu2A();
                         } else
                             g2mu2A = 0;
 
-                        if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                             g2mu2B = lat->cells[pos]->getg2mu2B();
                         } else
                             g2mu2B = 0;
@@ -1340,12 +1345,12 @@ void Evolution::eccentricity(
             pos = ix * N + iy;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -1507,12 +1512,12 @@ void Evolution::eccentricity(
             }
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -1675,12 +1680,12 @@ void Evolution::eccentricity(
             pos = ix * N + iy;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2349,12 +2354,12 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2543,12 +2548,12 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2716,12 +2721,12 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3281,12 +3286,12 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3490,12 +3495,12 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3666,12 +3671,12 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -4325,12 +4330,12 @@ int Evolution::correlations(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos > 0 && pos < (N - 1) * N + N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;

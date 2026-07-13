@@ -9,12 +9,11 @@ Lattice::Lattice(Parameters *param, int N, int length) {
     std::cout << "Allocating square lattice of size " << length << "x" << length
               << " with a=" << a << " fm ...";
 
-    // initialize the array of cells
-    for (int i = 0; i < size; i++) {
-        Cell *cell;
-        cell = new Cell(Nc);
-        cells.push_back(cell);
-    }
+    // initialize the array of cells in one contiguous allocation
+    cellStorage.reserve(size);
+    cells.reserve(size);
+    for (int i = 0; i < size; i++) cellStorage.emplace_back(Nc);
+    for (int i = 0; i < size; i++) cells.push_back(&cellStorage[i]);
 
     for (int i = 0; i < length; i++) {
         for (int j = 0; j < length; j++) {
@@ -29,24 +28,17 @@ Lattice::Lattice(Parameters *param, int N, int length) {
     std::cout << " done on rank " << param->getMPIRank() << "." << std::endl;
 }
 
-Lattice::~Lattice() {
-    for (int i = 0; i < size; i++) delete cells[i];
-    cells.clear();
-}
+Lattice::~Lattice() { cells.clear(); }
 
 // constructor
 BufferLattice::BufferLattice(int N, int length) {
     Nc = N;
     size = length * length;
 
-    for (int i = 0; i < size; i++) {
-        SmallCell *cell;
-        cell = new SmallCell(Nc);
-        cells.push_back(cell);
-    }
+    cellStorage.reserve(size);
+    cells.reserve(size);
+    for (int i = 0; i < size; i++) cellStorage.emplace_back(Nc);
+    for (int i = 0; i < size; i++) cells.push_back(&cellStorage[i]);
 }
 
-BufferLattice::~BufferLattice() {
-    for (int i = 0; i < size; i++) delete cells[i];
-    cells.clear();
-}
+BufferLattice::~BufferLattice() { cells.clear(); }

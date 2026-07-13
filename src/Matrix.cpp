@@ -1,5 +1,7 @@
 #include "Matrix.h"
 
+constexpr Matrix::NoInitTag Matrix::noInit;
+
 #include <gsl/gsl_integration.h>  // include gsl for Gauss-Legendre nodes and weights for log Pade
 
 #include <iostream>
@@ -15,8 +17,7 @@ using std::vector;
 Matrix::Matrix(int n) {
     ndim = n;
     nn = ndim * ndim;
-    // e = new complex<double> [nn];
-    e.resize(nn);
+    setupStorage();
     for (int i = 0; i < nn; i++) e[i] = complex<double>(0.0, 0.0);
 }
 
@@ -25,14 +26,7 @@ Matrix::Matrix(int n) {
 Matrix::Matrix(int n, double a) {
     ndim = n;
     nn = ndim * ndim;
-    // e = new complex<double> [nn];
-    e.resize(nn);
-    // if(e==0)
-    //  {
-    //    cout << "Matrix: cannot allocate memory (matrix:) e= " << e << endl;
-    //    abort();
-    //  }
-
+    setupStorage();
     for (int i = 0; i < nn; i++) e[i] = complex<double>(0.0, 0.0);
     for (int i = 0; i < ndim; i++) e[i * ndim + i] = complex<double>(a, 0.0);
 }
@@ -99,25 +93,34 @@ void Matrix::reu2() {
 
 Matrix operator*(const Matrix &a, const Matrix &b) {
     int n = a.getNDim();
-    Matrix c(n);
     if (n == 2) {
-        c.set(0, 0, a(0, 0) * b(0, 0) + a(0, 1) * b(1, 0));
-        c.set(0, 1, a(0, 0) * b(0, 1) + a(0, 1) * b(1, 1));
-        c.set(1, 0, a(1, 0) * b(0, 0) + a(1, 1) * b(1, 0));
-        c.set(1, 1, a(1, 0) * b(0, 1) + a(1, 1) * b(1, 1));
+        Matrix c(2, Matrix::noInit);
+        const complex<double> *A = a.data();
+        const complex<double> *B = b.data();
+        complex<double> *C = c.data();
+        C[0] = A[0] * B[0] + A[1] * B[2];
+        C[1] = A[0] * B[1] + A[1] * B[3];
+        C[2] = A[2] * B[0] + A[3] * B[2];
+        C[3] = A[2] * B[1] + A[3] * B[3];
         return c;
     } else if (n == 3) {
-        c.set(0, 0, a(0, 0) * b(0, 0) + a(0, 1) * b(1, 0) + a(0, 2) * b(2, 0));
-        c.set(0, 1, a(0, 0) * b(0, 1) + a(0, 1) * b(1, 1) + a(0, 2) * b(2, 1));
-        c.set(0, 2, a(0, 0) * b(0, 2) + a(0, 1) * b(1, 2) + a(0, 2) * b(2, 2));
-        c.set(1, 0, a(1, 0) * b(0, 0) + a(1, 1) * b(1, 0) + a(1, 2) * b(2, 0));
-        c.set(1, 1, a(1, 0) * b(0, 1) + a(1, 1) * b(1, 1) + a(1, 2) * b(2, 1));
-        c.set(1, 2, a(1, 0) * b(0, 2) + a(1, 1) * b(1, 2) + a(1, 2) * b(2, 2));
-        c.set(2, 0, a(2, 0) * b(0, 0) + a(2, 1) * b(1, 0) + a(2, 2) * b(2, 0));
-        c.set(2, 1, a(2, 0) * b(0, 1) + a(2, 1) * b(1, 1) + a(2, 2) * b(2, 1));
-        c.set(2, 2, a(2, 0) * b(0, 2) + a(2, 1) * b(1, 2) + a(2, 2) * b(2, 2));
+        Matrix c(3, Matrix::noInit);
+        const complex<double> *A = a.data();
+        const complex<double> *B = b.data();
+        complex<double> *C = c.data();
+        C[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
+        C[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
+        C[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
+        C[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
+        C[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
+        C[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
+        C[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
+        C[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
+        C[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
         return c;
-    } else if (n == 8) {
+    }
+    Matrix c(n);
+    if (n == 8) {
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
                 c.set(
@@ -139,28 +142,28 @@ Matrix operator*(const Matrix &a, const Matrix &b) {
 
 //-
 Matrix operator-(const Matrix &a, const Matrix &b) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) aa.set(i, a(i) - b(i));
     return aa;
 }
 
 //+
 Matrix operator+(const Matrix &a, const Matrix &b) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) aa.set(i, a(i) + b(i));
     return aa;
 }
 
 //* multiply by a real scalar
 Matrix operator*(const Matrix &a, const double s) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) {
         aa.set(i, a(i) * s);
     }
     return aa;
 }
 Matrix operator*(const double s, const Matrix &a) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) {
         aa.set(i, a(i) * s);
     }
@@ -169,7 +172,7 @@ Matrix operator*(const double s, const Matrix &a) {
 
 //* multiply by a complex number
 Matrix operator*(const complex<double> s, const Matrix &a) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) {
         aa.set(i, a(i) * s);
     }
@@ -178,7 +181,7 @@ Matrix operator*(const complex<double> s, const Matrix &a) {
 
 // / division by scalar
 Matrix operator/(const Matrix &a, const double s) {
-    Matrix aa(a.getNDim());
+    Matrix aa(a.getNDim(), Matrix::noInit);
     for (int i = 0; i < a.getNN(); i++) aa.set(i, a(i) / s);
     return aa;
 }
@@ -207,7 +210,15 @@ Matrix &Matrix::conjg() {
 }
 
 Matrix Matrix::prodABconj(const Matrix &a, const Matrix &b) {
-    Matrix c(3);
+    if (a.getNDim() == 2) {
+        Matrix c2(2);
+        c2.set(0, 0, a(0, 0) * conj(b(0, 0)) + a(0, 1) * conj(b(0, 1)));
+        c2.set(0, 1, a(0, 0) * conj(b(1, 0)) + a(0, 1) * conj(b(1, 1)));
+        c2.set(1, 0, a(1, 0) * conj(b(0, 0)) + a(1, 1) * conj(b(0, 1)));
+        c2.set(1, 1, a(1, 0) * conj(b(1, 0)) + a(1, 1) * conj(b(1, 1)));
+        return c2;
+    }
+    Matrix c(3, Matrix::noInit);
     c.set(
         0, 0,
         a(0, 0) * conj(b(0, 0)) + a(0, 1) * conj(b(0, 1))
@@ -248,7 +259,15 @@ Matrix Matrix::prodABconj(const Matrix &a, const Matrix &b) {
 }
 
 Matrix Matrix::prodAconjB(const Matrix &a, const Matrix &b) {
-    Matrix c(3);
+    if (a.getNDim() == 2) {
+        Matrix c2(2);
+        c2.set(0, 0, conj(a(0, 0)) * b(0, 0) + conj(a(1, 0)) * b(1, 0));
+        c2.set(0, 1, conj(a(0, 0)) * b(0, 1) + conj(a(1, 0)) * b(1, 1));
+        c2.set(1, 0, conj(a(0, 1)) * b(0, 0) + conj(a(1, 1)) * b(1, 0));
+        c2.set(1, 1, conj(a(0, 1)) * b(0, 1) + conj(a(1, 1)) * b(1, 1));
+        return c2;
+    }
+    Matrix c(3, Matrix::noInit);
     c.set(
         0, 0,
         conj(a(0, 0)) * b(0, 0) + conj(a(1, 0)) * b(1, 0)
