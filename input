@@ -1,7 +1,7 @@
 mode 1
 minimumQs2ST 0
 readMultFromFile 0
-size 800
+size 256
 L 30
 Nc 3
 m 0.4
@@ -56,14 +56,14 @@ runWithkt 0
 Ny 50
 useSeedList 0
 seed 13
-useTimeForSeed 1
+useTimeForSeed 0
 Projectile Pb
 Target d
 bmin 0
-bmax 5
+bmax 22
 computeGluonMultiplicity 1
 rotateReactionPlane 1
-nucleonPositionsFromFile 1
+nucleonPositionsFromFile 0
 lightNucleusOption 5
 polariztionProjectile 0
 polariztionTarget 2
@@ -80,7 +80,7 @@ LOutput 30
 sizeOutput 512
 etaSizeOutput 1
 detaOutput 0
-writeOutputs 0
+writeOutputs 1
 writeEvolution 0
 readInitialWilsonLines 0
 writeInitialWilsonLines 0
