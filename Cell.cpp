@@ -1,0 +1,47 @@
+
+#include "Cell.h"
+
+Cell::Cell(const int Nc)
+    : epsilon(0.),
+      g2mu2A(0.),
+      TpA(0.),
+      U(Nc, 1.),
+      g2mu2B(0.),
+      TpB(0.),
+      U2(Nc, 1.),
+      Ux(Nc, 1.),
+      Uy(Nc, 1.),
+      Ux1(Nc, 1.),
+      Uy1(Nc, 1.),
+      Ux2(Nc, 1.),
+      Uy2(Nc, 1.),
+      Ttautau(0.),
+      Txx(0.),
+      Tyy(0.),
+      Txy(0.),
+      Tetaeta(0.),
+      Ttaux(0.),
+      Ttauy(0.),
+      Ttaueta(0.),
+      Txeta(0.),
+      Tyeta(0.),
+      pitautau(0.),
+      pixx(0.),
+      piyy(0.),
+      pixy(0.),
+      pietaeta(0.),
+      pitaux(0.),
+      pitauy(0.),
+      pitaueta(0.),
+      pixeta(0.),
+      piyeta(0.),
+      utau(0.),
+      ux(0.),
+      uy(0.),
+      ueta(0.) {}
+
+Cell::~Cell() {}
+
+SmallCell::SmallCell(const int Nc) : buffer1(Nc, 1.), buffer2(Nc, 1.) {}
+
+SmallCell::~SmallCell() {}
