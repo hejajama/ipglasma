@@ -2419,15 +2419,18 @@ void Init::init(
         readNuclearQs(param);
     }
 
-    readInNucleusConfigs(
-        static_cast<int>(glauber->nucleusA1()), param->getlightNucleusOption(),
-        param->getPolarizationProjectile(),
-        param->getPolarizationProjectileJz(), nucleonPosArrA_);
-    readInNucleusConfigs(
-        static_cast<int>(glauber->nucleusA2()), param->getlightNucleusOption(),
-        param->getPolarizationTarget(), param->getPolarizationTargetJz(),
-        nucleonPosArrB_);
-
+    cout << param->getNucleonPositionsFromFile() << endl;
+    if (param->getNucleonPositionsFromFile() > 0)
+      {
+	readInNucleusConfigs(
+			     static_cast<int>(glauber->nucleusA1()), param->getlightNucleusOption(),
+			     param->getPolarizationProjectile(),
+			     param->getPolarizationProjectileJz(), nucleonPosArrA_);
+	readInNucleusConfigs(
+			     static_cast<int>(glauber->nucleusA2()), param->getlightNucleusOption(),
+			     param->getPolarizationTarget(), param->getPolarizationTargetJz(),
+			     nucleonPosArrB_);
+      }
     // sample nucleon positions
     nucleusA_.clear();
     nucleusB_.clear();

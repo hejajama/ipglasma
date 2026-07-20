@@ -398,17 +398,31 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     evolvePhi(lat, param, dtau, 0.);
     evolveU(lat, param, dtau, 0.);
 
-    int itmax = static_cast<int>(maxtime / (a * dtau) + 0.1);
-    // int it0   = static_cast<int>(0.1/(a*dtau) + 0.1);
-    // int it1   = static_cast<int>(0.2/(a*dtau) + 0.1);
-    // int it2   = static_cast<int>(0.4/(a*dtau) + 0.1);
-    // int it3   = static_cast<int>(0.6/(a*dtau) + 0.1);
+    int itmax = static_cast<int>(maxtime / (a * dtau) + 0.00000000001);
+    int it0   = static_cast<int>(0.1/(a*dtau) + 0.0000000001);
+    int it1   = static_cast<int>(0.2/(a*dtau) + 0.0000000001);
+    int it2   = static_cast<int>(0.3/(a*dtau) + 0.0000000001);
+    int it3   = static_cast<int>(0.4/(a*dtau) + 0.0000000001);
 
     cout << "Starting evolution: num of time steps=" << itmax << "" << endl;
+    if ( (param->getWriteOutputs() == 5) ) {
+      cout << "Measuring at times " << it0 * a * dtau << ", "  << it1 * a * dtau << ", "
+	   << it2 * a * dtau << ", "  << it3 * a * dtau << ", "  << itmax * a * dtau << ". " << endl;
+    }
+    cout << " a = " << a << endl;
+    cout << " dtau = " << dtau << endl;
+    cout << " it0 = " << it0 << endl;
 
+    
     // do evolution
     for (int it = 1; it <= itmax; it++) {
         if (it == itmax) {
+            Tmunu(lat, param, it);
+            // computes flow velocity and correct energy density
+            u(lat, param, it, true);
+        }
+
+        if ( (param->getWriteOutputs() == 5) && ( it == it0 || it == it1 || it == it2 || it == it3 )) {
             Tmunu(lat, param, it);
             // computes flow velocity and correct energy density
             u(lat, param, it, true);
