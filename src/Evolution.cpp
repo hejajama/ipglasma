@@ -643,7 +643,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
             Tmunu(lat, param, it);
             //writeEvolvedFields(lat, param, it);
             // computes flow velocity and correct energy density
-            u(lat, param, it, true);
+            u(lat, param, it, false);
         }
 
         if (it % 10 == 0) {
