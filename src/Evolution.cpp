@@ -7,6 +7,10 @@
 #include <gsl/gsl_spline.h>
 
 #include <complex>
+#include <cstdint>
+#include <iomanip>
+#include <stdexcept>
+#include <vector>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -368,6 +372,212 @@ void Evolution::checkGaussLaw(Lattice *lat, Parameters *param) {
     cout << "Gauss violation=" << largest << endl;
 }
 
+
+void Evolution::writeEvolvedFields(
+    Lattice *lat, Parameters *param, int it) {
+  const int N = param->getSize();
+  const int Nc = param->getNc();
+  const double a = param->getL() / static_cast<double>(N);
+  const double dtau = param->getdtau();
+  const double tauLattice = static_cast<double>(it) * dtau;
+  const double tauFm = a * tauLattice;
+  const double momentumTauFm =
+      (it == 0) ? 0.0 : a * (static_cast<double>(it) - 0.5) * dtau;
+
+  // The payload layout is [field, real_or_imag, x, y, row, col], C-order.
+  // Full matrices are stored so that no color information is discarded.
+  constexpr int nFields = 6;
+  const std::size_t matrixElements =
+      static_cast<std::size_t>(N) * N * Nc * Nc;
+  const std::size_t payloadElements =
+      static_cast<std::size_t>(nFields) * 2 * matrixElements;
+  std::vector<float> payload(payloadElements);
+
+  auto matrixAt = [lat](const int field, const int pos) -> const Matrix & {
+    switch (field) {
+      case 0:
+        return lat->cells[pos]->getphi();
+      case 1:
+        return lat->cells[pos]->getpi();
+      case 2:
+        return lat->cells[pos]->getE1();
+      case 3:
+        return lat->cells[pos]->getE2();
+      case 4:
+        return lat->cells[pos]->getUx();
+      case 5:
+        return lat->cells[pos]->getUy();
+      default:
+        throw std::runtime_error("invalid evolved-field index");
+    }
+  };
+
+  for (int field = 0; field < nFields; ++field) {
+    const std::size_t realOffset =
+        static_cast<std::size_t>(2 * field) * matrixElements;
+    const std::size_t imagOffset = realOffset + matrixElements;
+    for (int x = 0; x < N; ++x) {
+      for (int y = 0; y < N; ++y) {
+        const int pos = x * N + y;
+        const Matrix &matrix = matrixAt(field, pos);
+        const std::complex<double> *elements = matrix.data();
+        const std::size_t siteOffset =
+            static_cast<std::size_t>(pos) * Nc * Nc;
+        for (int row = 0; row < Nc; ++row) {
+          for (int col = 0; col < Nc; ++col) {
+            const std::size_t element =
+                static_cast<std::size_t>(row) * Nc + col;
+            payload[realOffset + siteOffset + element] =
+                static_cast<float>(elements[element].real());
+            payload[imagOffset + siteOffset + element] =
+                static_cast<float>(elements[element].imag());
+          }
+        }
+      }
+    }
+  }
+
+  // This binary format is explicitly little-endian. IP-Glasma production
+  // platforms are normally little-endian; fail loudly rather than emit an
+  // ambiguous file on another architecture.
+  const std::uint16_t endianProbe = 1;
+  if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
+    throw std::runtime_error(
+        "writeEvolvedFields currently requires a little-endian host");
+  }
+
+  std::stringstream metadata;
+  metadata << std::setprecision(17)
+           << "{\"format\":\"ipglasma-evolved-fields\","
+           << "\"version\":1,"
+           << "\"dtype\":\"<f4\","
+           << "\"shape\":[6,2," << N << "," << N << "," << Nc << ","
+           << Nc << "],"
+           << "\"axis_order\":[\"field\",\"complex_part\",\"x\",\"y\","
+              "\"row\",\"col\"],"
+           << "\"fields\":[\"phi\",\"pi\",\"E1\",\"E2\",\"Ux\","
+              "\"Uy\"],"
+           << "\"complex_part\":[\"real\",\"imag\"],"
+           << "\"native_site_index\":\"pos=x*N+y\","
+           << "\"event_id\":" << param->getEventId() << ","
+           << "\"step\":" << it << ","
+           << "\"tau_lattice\":" << tauLattice << ","
+           << "\"tau_fm\":" << tauFm << ","
+           << "\"momentum_tau_fm\":" << momentumTauFm << ","
+           << "\"a_fm\":" << a << ","
+           << "\"dtau_lattice\":" << dtau << ","
+           << "\"staggering\":\"Ux,Uy,phi at tau; E1,E2,pi at tau-dtau/2 "
+              "for step>0; all variables are the initialized tau=0+ values "
+              "for step=0\"}";
+  const std::string metadataString = metadata.str();
+
+  stringstream filename;
+  filename << "evolvedFields" << param->getEventId() << "_it"
+           << std::setw(8) << std::setfill('0') << it << ".ipgf";
+
+  ofstream output(
+      filename.str().c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
+  if (!output) {
+    throw std::runtime_error(
+        "could not open evolved-field snapshot " + filename.str());
+  }
+
+  const char magic[8] = {'I', 'P', 'G', 'F', 'L', 'D', '1', '\0'};
+  const std::uint64_t metadataBytes =
+      static_cast<std::uint64_t>(metadataString.size());
+  output.write(magic, sizeof(magic));
+  output.write(
+      reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
+  output.write(metadataString.data(), metadataString.size());
+  output.write(
+      reinterpret_cast<const char *>(payload.data()),
+      static_cast<std::streamsize>(payload.size() * sizeof(float)));
+  output.close();
+
+  if (!output) {
+    throw std::runtime_error(
+        "failed while writing evolved-field snapshot " + filename.str());
+  }
+  cout << "Wrote evolved fields at tau=" << tauFm << " fm/c to "
+       << filename.str() << endl;
+}
+
+
+void Evolution::writeGluonMultiplicityTarget(
+    Parameters *param, int it, double a, double dtau,
+    double dNPrimary, double dNBinned,
+    double dEPrimary, double dEBinned,
+    double dNCut3, double dECut3,
+    double dNCut6, double dECut6,
+    const double *spectrumN, const double *spectrumE,
+    const int *spectrumCounts, int bins, double dkt) {
+  stringstream filename;
+  filename << "gluonMultiplicity" << param->getEventId() << ".json";
+  ofstream output(filename.str().c_str(), std::ios::out | std::ios::trunc);
+  if (!output) {
+    throw std::runtime_error(
+        "could not open gluon-multiplicity target " + filename.str());
+  }
+
+  const char *rapidityVariable =
+      (param->getUsePseudoRapidity() == 0) ? "y" : "eta";
+  const double meanKt = (dNPrimary != 0.0) ? dEPrimary / dNPrimary : 0.0;
+  const double spectrumUnitFactor = (a / hbarc) * (a / hbarc);
+
+  output << std::setprecision(17)
+         << "{\n"
+         << "  \"format\": \"ipglasma-gluon-target\",\n"
+         << "  \"version\": 1,\n"
+         << "  \"event_id\": " << param->getEventId() << ",\n"
+         << "  \"step\": " << it << ",\n"
+         << "  \"tau_fm\": " << static_cast<double>(it) * dtau * a << ",\n"
+         << "  \"rapidity_variable\": \"" << rapidityVariable << "\",\n"
+         << "  \"dN\": " << dNPrimary << ",\n"
+         << "  \"dN_binned_check\": " << dNBinned << ",\n"
+         << "  \"dE_GeV\": " << dEPrimary << ",\n"
+         << "  \"dE_binned_check_GeV\": " << dEBinned << ",\n"
+         << "  \"mean_kT_GeV\": " << meanKt << ",\n"
+         << "  \"dN_kT_gt_3_GeV\": " << dNCut3 << ",\n"
+         << "  \"dE_kT_gt_3_GeV\": " << dECut3 << ",\n"
+         << "  \"dN_kT_gt_6_GeV\": " << dNCut6 << ",\n"
+         << "  \"dE_kT_gt_6_GeV\": " << dECut6 << ",\n"
+         << "  \"Npart\": " << param->getNpart() << ",\n"
+         << "  \"Tpp\": " << param->getTpp() << ",\n"
+         << "  \"impact_parameter_fm\": " << param->getb() << ",\n"
+         << "  \"random_seed\": " << param->getRandomSeed() << ",\n"
+         << "  \"spectrum_definition\": \"azimuthally averaged Coulomb-gauge gluon spectrum used by Evolution::multiplicity\",\n"
+         << "  \"kt_GeV\": [";
+
+  for (int ik = 0; ik < bins; ++ik) {
+    if (ik != 0) output << ",";
+    output << (static_cast<double>(ik) + 0.5) * dkt / a * hbarc;
+  }
+  output << "],\n  \"dN_d2k_GeV_minus2\": [";
+  for (int ik = 0; ik < bins; ++ik) {
+    if (ik != 0) output << ",";
+    output << spectrumN[ik] * spectrumUnitFactor;
+  }
+  output << "],\n  \"dE_d2k_GeV_minus1\": [";
+  for (int ik = 0; ik < bins; ++ik) {
+    if (ik != 0) output << ",";
+    output << spectrumE[ik] * spectrumUnitFactor;
+  }
+  output << "],\n  \"lattice_bin_counts\": [";
+  for (int ik = 0; ik < bins; ++ik) {
+    if (ik != 0) output << ",";
+    output << spectrumCounts[ik];
+  }
+  output << "]\n}\n";
+  output.close();
+
+  if (!output) {
+    throw std::runtime_error(
+        "failed while writing gluon-multiplicity target " + filename.str());
+  }
+  cout << "Wrote gluon target dN/d" << rapidityVariable << "=" << dNPrimary
+       << " to " << filename.str() << endl;
+}
+
 void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     int Nc = param->getNc();
     int pos;
@@ -395,6 +605,10 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 
     // E and Pi at tau=dtau/2 are equal to the initial ones (at tau=0)
     // now evolve phi and U to time tau=dtau.
+  if (param->getWriteOutputs() == 5) {
+    // Save the initialized forward-light-cone state at tau=0+.
+    //writeEvolvedFields(lat, param, 0);
+  }
     evolvePhi(lat, param, dtau, 0.);
     evolveU(lat, param, dtau, 0.);
 
@@ -418,12 +632,16 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     for (int it = 1; it <= itmax; it++) {
         if (it == itmax) {
             Tmunu(lat, param, it);
+    if (param->getWriteOutputs() == 5) {
+      // writeEvolvedFields(lat, param, it);
+    }
             // computes flow velocity and correct energy density
             u(lat, param, it, true);
         }
 
         if ( (param->getWriteOutputs() == 5) && ( it == it0 || it == it1 || it == it2 || it == it3 )) {
             Tmunu(lat, param, it);
+            //writeEvolvedFields(lat, param, it);
             // computes flow velocity and correct energy density
             u(lat, param, it, true);
         }
@@ -661,7 +879,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 
         int success = 1;
         if (param->getComputeGluonMultiplicity()) {
-            if (it == 1 || it == itmax) {
+            if (it == itmax) {
                 eccentricity(lat, param, it, 0.0, 0);
                 // eccentricity(lat, param, it, 0.1, 0);
                 // eccentricity(lat, param, it, 1., 0);
@@ -3193,6 +3411,14 @@ int Evolution::multiplicity(
                                     c))))
                << endl;
         foutNN.close();
+    writeGluonMultiplicityTarget(
+        param, it, a, dtau,
+        dNdeta, dNdeta2,
+        dEdeta, dEdeta2,
+        dNdetaCut, dEdetaCut,
+        dNdetaCut2, dEdetaCut2,
+        n, E, counter, bins, dkt);
+
     }
 
     for (int i = 0; i < N * N; i++) {

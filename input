@@ -60,7 +60,7 @@ useTimeForSeed 0
 Projectile Pb
 Target Pb
 bmin 0
-bmax 22
+bmax 0
 computeGluonMultiplicity 1
 rotateReactionPlane 1
 nucleonPositionsFromFile 0

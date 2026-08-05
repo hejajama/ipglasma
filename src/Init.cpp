@@ -3,6 +3,10 @@
 
 #include "Init.h"
 
+#include <cstdint>
+#include <iomanip>
+#include <stdexcept>
+#include <vector>
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -1743,6 +1747,101 @@ void Init::setColorChargeDensity(
     foutNEst.close();
 }
 
+
+namespace {
+void writeInitialWilsonTrainingData(Lattice *lat, Parameters *param) {
+  const int N = param->getSize();
+  const int Nc = param->getNc();
+  const double L = param->getL();
+  const double a = L / static_cast<double>(N);
+
+  // Payload: [beam, real_or_imag, x, y, row, col], C-order.
+  constexpr int nBeams = 2;
+  const std::size_t matrixElements =
+      static_cast<std::size_t>(N) * N * Nc * Nc;
+  std::vector<float> payload(
+      static_cast<std::size_t>(nBeams) * 2 * matrixElements);
+
+  for (int beam = 0; beam < nBeams; ++beam) {
+    const std::size_t realOffset =
+        static_cast<std::size_t>(2 * beam) * matrixElements;
+    const std::size_t imagOffset = realOffset + matrixElements;
+    for (int x = 0; x < N; ++x) {
+      for (int y = 0; y < N; ++y) {
+        const int pos = x * N + y;
+        const Matrix &matrix =
+            (beam == 0) ? lat->cells[pos]->getU() : lat->cells[pos]->getU2();
+        const std::complex<double> *elements = matrix.data();
+        const std::size_t siteOffset =
+            static_cast<std::size_t>(pos) * Nc * Nc;
+        for (int row = 0; row < Nc; ++row) {
+          for (int col = 0; col < Nc; ++col) {
+            const std::size_t element =
+                static_cast<std::size_t>(row) * Nc + col;
+            payload[realOffset + siteOffset + element] =
+                static_cast<float>(elements[element].real());
+            payload[imagOffset + siteOffset + element] =
+                static_cast<float>(elements[element].imag());
+          }
+        }
+      }
+    }
+  }
+
+  const std::uint16_t endianProbe = 1;
+  if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
+    throw std::runtime_error(
+        "writeInitialWilsonTrainingData requires a little-endian host");
+  }
+
+  std::stringstream metadata;
+  metadata << std::setprecision(17)
+           << "{\"format\":\"ipglasma-initial-wilson-lines\","
+           << "\"version\":1,"
+           << "\"dtype\":\"<f4\","
+           << "\"shape\":[2,2," << N << "," << N << "," << Nc << ","
+           << Nc << "],"
+           << "\"axis_order\":[\"beam\",\"complex_part\",\"x\",\"y\","
+              "\"row\",\"col\"],"
+           << "\"fields\":[\"VA\",\"VB\"],"
+           << "\"complex_part\":[\"real\",\"imag\"],"
+           << "\"native_site_index\":\"pos=x*N+y\","
+           << "\"event_id\":" << param->getEventId() << ","
+           << "\"N\":" << N << ","
+           << "\"Nc\":" << Nc << ","
+           << "\"L_fm\":" << L << ","
+           << "\"a_fm\":" << a << ","
+           << "\"rapidity\":" << param->getRapidity() << "}";
+  const std::string metadataString = metadata.str();
+
+  std::stringstream filename;
+  filename << "initialWilsonLines" << param->getEventId() << ".ipgw";
+  std::ofstream output(
+      filename.str().c_str(),
+      std::ios::out | std::ios::binary | std::ios::trunc);
+  if (!output) {
+    throw std::runtime_error(
+        "could not open initial-Wilson snapshot " + filename.str());
+  }
+  const char magic[8] = {'I', 'P', 'G', 'W', 'I', 'L', '1', '\0'};
+  const std::uint64_t metadataBytes =
+      static_cast<std::uint64_t>(metadataString.size());
+  output.write(magic, sizeof(magic));
+  output.write(
+      reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
+  output.write(metadataString.data(), metadataString.size());
+  output.write(
+      reinterpret_cast<const char *>(payload.data()),
+      static_cast<std::streamsize>(payload.size() * sizeof(float)));
+  output.close();
+  if (!output) {
+    throw std::runtime_error(
+        "failed while writing initial-Wilson snapshot " + filename.str());
+  }
+  std::cout << "Wrote incoming Wilson lines to " << filename.str() << std::endl;
+}
+}  // namespace
+
 void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     messager.info("Setting Wilson lines ...");
     const int N = param->getSize();
@@ -1921,8 +2020,11 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
         delete[] rhoACoeff[ic];
     }
     delete[] rhoACoeff;
+  if (param->getWriteOutputs() == 5) {
+    writeInitialWilsonTrainingData(lat, param);
+  }
 
-    // // output U
+  // // output U
     if (param->getWriteInitialWilsonLines() > 0) {
         if (std::abs(param->getb()) > 1e-5)
             messager.warning(
