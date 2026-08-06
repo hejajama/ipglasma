@@ -4,8 +4,11 @@
 
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
+#include "Instrumentation.h"
 #include "Phys_consts.h"
 #include "gsl/gsl_complex.h"
 #include "gsl/gsl_complex_math.h"
@@ -17,7 +20,32 @@ using PhysConst::small_eps;
 using std::cout;
 using std::endl;
 using std::ofstream;
+using std::string;
 using std::stringstream;
+using std::vector;
+
+namespace {
+
+const std::size_t kTextOutputBufferBytes = 4u * 1024u * 1024u;
+
+void openBufferedTextOutput(
+    ofstream &output, vector<char> &buffer, const string &filename) {
+    output.rdbuf()->pubsetbuf(
+        buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    output.open(filename.c_str(), std::ios::out);
+    if (!output) {
+        throw std::runtime_error("could not open output file " + filename);
+    }
+}
+
+void closeBufferedTextOutput(ofstream &output, const string &filename) {
+    output.close();
+    if (!output) {
+        throw std::runtime_error("failed while writing output file " + filename);
+    }
+}
+
+}  // namespace
 
 //**************************************************************************
 // MyEigen class.
@@ -431,12 +459,16 @@ void MyEigen::flowVelocity4D(
     // ".dat"; string Etot_name; Etot_name = strEtot_name.str();
 
     if (param->getWriteOutputs() % 2 == 1) {
-        ofstream foutEps2(streuH_name.str().c_str(), std::ios::out);
+        IPG_PROFILE_SCOPE("output.hydro_text");
+        const string outputFilename = streuH_name.str();
+        vector<char> outputBuffer(kTextOutputBufferBytes);
+        ofstream foutEps2;
+        openBufferedTextOutput(foutEps2, outputBuffer, outputFilename);
         //      ofstream foutEtot(Etot_name.c_str(),ios::out);
 
         foutEps2 << "# dummy " << 1 << " etamax= " << heta << " xmax= " << hx
                  << " ymax= " << hy << " deta= " << deta << " dx= " << ha
-                 << " dy= " << ha << " tau= " << tau0 << endl;
+                 << " dy= " << ha << " tau= " << tau0 << '\n';
 
         for (int ieta = 0; ieta < heta; ieta++)  // loop over all positions
         {
@@ -810,7 +842,7 @@ void MyEigen::flowVelocity4D(
                                      << resultpixeta * gfactor << " "
                                      << resultpiyy * gfactor << " "
                                      << resultpiyeta * gfactor << " "
-                                     << resultpietaeta * gfactor << endl;
+                                     << resultpietaeta * gfactor << '\n';
                         } else {
                             foutEps2 << -(heta - 1) / 2. * deta + deta * ieta
                                      << " " << x << " " << y << " " << 0. << " "
@@ -818,7 +850,7 @@ void MyEigen::flowVelocity4D(
                                      << 0. << " " << 0. << " " << 0. << " "
                                      << 0. << " " << 0. << " " << 0. << " "
                                      << 0. << " " << 0. << " " << 0. << " "
-                                     << 0. << " " << 0. << endl;
+                                     << 0. << " " << 0. << '\n';
                         }
                     } else {
                         foutEps2 << -(heta - 1) / 2. * deta + deta * ieta << " "
@@ -826,14 +858,14 @@ void MyEigen::flowVelocity4D(
                                  << " " << 0. << " " << 0. << " " << 0. << " "
                                  << 0. << " " << 0. << " " << 0. << " " << 0.
                                  << " " << 0. << " " << 0. << " " << 0. << " "
-                                 << 0. << " " << 0. << " " << 0. << endl;
+                                 << 0. << " " << 0. << " " << 0. << '\n';
                     }
                 }
             }
-            foutEps2 << endl;
+            foutEps2 << '\n';
         }
 
-        foutEps2.close();
+        closeBufferedTextOutput(foutEps2, outputFilename);
         cout << "Etot = " << Etot << " GeV " << endl;
     }
     //       foutEtot <<  Etot << endl;
@@ -846,10 +878,14 @@ void MyEigen::flowVelocity4D(
         stringstream strTmunu_name;
         strTmunu_name << "Tmunu-t" << it * dtau * a << "-"
                       << param->getEventId() << ".dat";
-        ofstream foutEps1(strTmunu_name.str().c_str(), std::ios::out);
+        IPG_PROFILE_SCOPE("output.tmunu_text");
+        const string outputFilename = strTmunu_name.str();
+        vector<char> outputBuffer(kTextOutputBufferBytes);
+        ofstream foutEps1;
+        openBufferedTextOutput(foutEps1, outputBuffer, outputFilename);
         foutEps1 << "# dummy " << 1 << " etamax= " << heta << " xmax= " << hx
                  << " ymax= " << hy << " deta= " << deta << " dx= " << ha
-                 << " dy= " << ha << endl;
+                 << " dy= " << ha << '\n';
         // loop over all positions
         for (int iy = 0; iy < hy; iy++) {
             for (int ix = 0; ix < hx; ix++) {
@@ -1065,24 +1101,24 @@ void MyEigen::flowVelocity4D(
                             << -tau0 * resultT0eta * gfactor * hbarc << " "
                             << -resultTxy * gfactor * hbarc << " "
                             << -tau0 * resultTyeta * gfactor * hbarc << " "
-                            << -tau0 * resultTxeta * gfactor * hbarc << endl;
+                            << -tau0 * resultTxeta * gfactor * hbarc << '\n';
                     } else {
                         foutEps1 << ix << " " << iy << " " << small_eps << " "
                                  << small_eps / 2. << " " << small_eps / 2.
                                  << " " << 0.0 << " " << 0.0 << " " << 0.0
                                  << " " << 0.0 << " " << 0.0 << " " << 0.0
-                                 << " " << 0.0 << endl;
+                                 << " " << 0.0 << '\n';
                     }
                 } else {
                     foutEps1 << ix << " " << iy << " " << small_eps << " "
                              << small_eps / 2. << " " << small_eps / 2. << " "
                              << 0.0 << " " << 0.0 << " " << 0.0 << " " << 0.0
-                             << " " << 0.0 << " " << 0.0 << " " << 0.0 << endl;
+                             << " " << 0.0 << " " << 0.0 << " " << 0.0 << '\n';
                 }
             }
-            foutEps1 << endl;
+            foutEps1 << '\n';
         }
-        foutEps1.close();
+        closeBufferedTextOutput(foutEps1, outputFilename);
     }
 
     if (static_cast<int>((param->getWriteOutputs() % 4) / 2) == 1) {
