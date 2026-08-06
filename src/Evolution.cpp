@@ -220,10 +220,8 @@ void Evolution::evolveE(
 
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
-            int i = pos / N;
-            int j = pos % N;
-            int posmXpY = std::max(0, i - 1) * N + std::min(N - 1, j + 1);
-            int pospXmY = std::min(N - 1, i + 1) * N + std::max(0, j - 1);
+            const int posmXpY = lat->posmXpY[pos];
+            const int pospXmY = lat->pospXmY[pos];
 
             // retrieve current E1 and E2 (that's the one defined at tau-dtau/2)
             En = lat->cells[pos]->getE1();
@@ -1181,8 +1179,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             posmX = lat->posmX[pos];
             posmY = lat->posmY[pos];
 
-            posmXpY = std::max(0, i - 1) * N + std::min(N - 1, j + 1);
-            pospXmY = std::min(N - 1, i + 1) * N + std::max(0, j - 1);
+            posmXpY = lat->posmXpY[pos];
+            pospXmY = lat->pospXmY[pos];
 
             pos2X = std::min(N - 1, i + 2) * N + j;
             pos2Y = i * N + std::min(N - 1, j + 2);

@@ -35,6 +35,8 @@ class Lattice {
     std::vector<int> pospX;
     std::vector<int> posmY;
     std::vector<int> pospY;
+    std::vector<int> posmXpY;  // (x - 1, y + 1), clamped at boundaries
+    std::vector<int> pospXmY;  // (x + 1, y - 1), clamped at boundaries
 };
 
 class BufferLattice {
