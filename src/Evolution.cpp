@@ -17,6 +17,7 @@
 
 #include "Fragmentation.h"
 #include "GaugeFix.h"
+#include "Instrumentation.h"
 #include "MyEigen.h"
 #include "Phys_consts.h"
 
@@ -38,6 +39,7 @@ using std::stringstream;
 
 void Evolution::evolveU(
     Lattice *lat, Parameters *param, double dtau, double tau) {
+    IPG_PROFILE_SCOPE("evolution.evolveU");
     // tau is the current time. The time argument of E^i is tau+dtau/2
     // we evolve to tau+dtau
     const int Nc = param->getNc();
@@ -93,6 +95,7 @@ void Evolution::evolveU(
 
 void Evolution::evolvePhi(
     Lattice *lat, Parameters *param, double dtau, double tau) {
+    IPG_PROFILE_SCOPE("evolution.evolvePhi");
     // tau is the current time. The time argument of pi is tau+dtau/2
     // we evolve to tau+dtau
     const int Nc = param->getNc();
@@ -120,6 +123,7 @@ void Evolution::evolvePhi(
 
 void Evolution::evolvePi(
     Lattice *lat, Parameters *param, double dtau, double tau) {
+    IPG_PROFILE_SCOPE("evolution.evolvePi");
     const int Nc = param->getNc();
     const int N = param->getSize();
 
@@ -183,6 +187,7 @@ void Evolution::evolvePi(
 
 void Evolution::evolveE(
     Lattice *lat, Parameters *param, double dtau, double tau) {
+    IPG_PROFILE_SCOPE("evolution.evolveE");
     const int Nc = param->getNc();
     const int N = param->getSize();
     const double g = param->getg();
@@ -302,6 +307,7 @@ void Evolution::evolveE(
 }
 
 void Evolution::checkGaussLaw(Lattice *lat, Parameters *param) {
+    IPG_PROFILE_SCOPE("diagnostics.gauss_law");
     const int Nc = param->getNc();
     const int N = param->getSize();
 
@@ -579,6 +585,7 @@ void Evolution::writeGluonMultiplicityTarget(
 }
 
 void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
+    IPG_PROFILE_SCOPE("evolution.total");
     int Nc = param->getNc();
     int pos;
     int N = param->getSize();
@@ -894,6 +901,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 }
 
 void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
+    IPG_PROFILE_SCOPE("observables.Tmunu");
     double averageTtautau = 0.;
     double averageTtaueta = 0.;
     double averageTxx = 0.;
@@ -1483,6 +1491,7 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 }
 
 void Evolution::u(Lattice *lat, Parameters *param, int it, bool finalFlag) {
+    IPG_PROFILE_SCOPE("observables.flow_velocity");
     MyEigen myeigen;
     myeigen.flowVelocity4D(lat, param, it, finalFlag);
 }

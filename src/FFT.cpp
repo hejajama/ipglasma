@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "Matrix.h"
+#include "Instrumentation.h"
 
 //**************************************************************************
 // FFT class.
@@ -18,6 +19,7 @@
 void FFT::fftnVector(
     vector<complex<double>> **data, vector<complex<double>> **outdata,
     const int nn[], const int isign) {
+    IPG_PROFILE_SCOPE("fft.total");
     unsigned ntot = nn[0] * nn[1];
     int pos, newpos;
     vector<complex<double>>::iterator position;
@@ -139,6 +141,7 @@ void FFT::fftnVector(
 void FFT::fftnArray(
     complex<double> **data, complex<double> **outdata, const int nn[],
     const int isign, const int mDim) {
+    IPG_PROFILE_SCOPE("fft.total");
     unsigned ntot = nn[0] * nn[1];
     int pos, newpos;
 
@@ -258,6 +261,7 @@ void FFT::fftnArray(
 // resort before or after!
 template <class T>
 void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
+    IPG_PROFILE_SCOPE("fft.total");
     unsigned ntot = nn[0] * nn[1];
     int mDim, pos, newpos;  // matrix dimension
     mDim = data[0]->getNDim();
@@ -372,6 +376,7 @@ void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
 
 template <class T>
 void FFT::fftnMany(T **data, T **outdata, const int nn[], const int isign) {
+    IPG_PROFILE_SCOPE("fft.total");
     unsigned ntot = nn[0] * nn[1];
     int mDim, pos, newpos;  // matrix dimension
     mDim = data[0]->getNDim();
@@ -492,6 +497,7 @@ void FFT::fftnMany(T **data, T **outdata, const int nn[], const int isign) {
 void FFT::fftnComplex(
     complex<double> *data, complex<double> *outdata, const int nn[],
     const int isign) {
+    IPG_PROFILE_SCOPE("fft.total");
     unsigned ntot = nn[0] * nn[1];
     int mDim, pos, newpos;  // matrix dimension
     mDim = 1;

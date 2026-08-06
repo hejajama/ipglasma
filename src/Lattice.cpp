@@ -1,7 +1,9 @@
 #include "Lattice.h"
+#include "Instrumentation.h"
 
 // constructor
 Lattice::Lattice(Parameters *param, int N, int length) {
+    IPG_PROFILE_SCOPE("lattice.allocate");
     Nc = N;
     size = length * length;
     double a = param->getL() / static_cast<double>(length);

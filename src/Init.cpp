@@ -2,6 +2,7 @@
 // Copyright (C) 2012 Bjoern Schenke.
 
 #include "Init.h"
+#include "Instrumentation.h"
 
 #include <cstdint>
 #include <iomanip>
@@ -68,6 +69,7 @@ void Init::solveAxb(double *Jab, double *Fa, std::vector<double> &xvec) {
 }
 
 void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
+    IPG_PROFILE_SCOPE("initialization.sample_nuclei");
     ReturnValue rv, rv2;
     messager.info("Sampling nucleon positions ... ");
 
@@ -473,6 +475,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 }
 
 void Init::readNuclearQs(Parameters *param) {
+    IPG_PROFILE_SCOPE("initialization.read_qs_table");
     // steps in qs0 and Y in the file
     // double y[iymaxNuc];
     // double qs0[ibmax];
@@ -814,6 +817,7 @@ double Init::getNuclearQs2(double T, double y) {
 // prop tp g^mu(b,y) also compute N_part using Glauber
 void Init::setColorChargeDensity(
     Lattice *lat, Parameters *param, Random *random, Glauber *glauber) {
+    IPG_PROFILE_SCOPE("initialization.color_charge_density");
     std::cout << "set color charge density ..." << std::endl;
     int pos, posA, posB;
     int N = param->getSize();
@@ -1843,6 +1847,7 @@ void writeInitialWilsonTrainingData(Lattice *lat, Parameters *param) {
 }  // namespace
 
 void Init::setV(Lattice *lat, Parameters *param, Random *random) {
+    IPG_PROFILE_SCOPE("initialization.wilson_lines");
     messager.info("Setting Wilson lines ...");
     const int N = param->getSize();
     const int Ny = param->getNy();
@@ -2156,6 +2161,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
 }
 
 void Init::readV(Lattice *lat, Parameters *param, int format) {
+    IPG_PROFILE_SCOPE("initialization.read_wilson_lines");
     // format 1 = plain text, 2 = binary
 
     if (format > 2 or format < 1) {
@@ -2473,6 +2479,7 @@ void Init::readV(Lattice *lat, Parameters *param, int format) {
 void Init::init(
     Lattice *lat, Group *group, Parameters *param, Random *random,
     Glauber *glauber, int READFROMFILE) {
+    IPG_PROFILE_SCOPE("initialization.total");
     const int maxIterations = 100000;
     const int N = param->getSize();
     Nc_ = param->getNc();
