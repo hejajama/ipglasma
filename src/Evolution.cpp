@@ -37,87 +37,348 @@ using std::stringstream;
 //**************************************************************************
 // Evolution class.
 
+namespace {
+
+struct EvolveUScratch {
+    explicit EvolveUScratch(int Nc)
+        : E1(Nc), E2(Nc), temp1(Nc), temp2(Nc), one(Nc, 1.) {}
+
+    Matrix E1;
+    Matrix E2;
+    Matrix temp1;
+    Matrix temp2;
+    Matrix one;
+};
+
+struct EvolvePhiScratch {
+    explicit EvolvePhiScratch(int Nc) : phi(Nc), pi(Nc) {}
+
+    Matrix phi;
+    Matrix pi;
+};
+
+struct EvolvePiScratch {
+    explicit EvolvePiScratch(int Nc)
+        : Ux(Nc),
+          Uy(Nc),
+          UxXm1(Nc),
+          UyYm1(Nc),
+          phi(Nc),
+          phiX(Nc),
+          phiY(Nc),
+          phimX(Nc),
+          phimY(Nc),
+          bracket(Nc),
+          pi(Nc) {}
+
+    Matrix Ux;
+    Matrix Uy;
+    Matrix UxXm1;
+    Matrix UyYm1;
+    Matrix phi;
+    Matrix phiX;
+    Matrix phiY;
+    Matrix phimX;
+    Matrix phimY;
+    Matrix bracket;
+    Matrix pi;
+};
+
+struct EvolveEScratch {
+    explicit EvolveEScratch(int Nc)
+        : Ux(Nc),
+          Uy(Nc),
+          temp1(Nc),
+          temp2(Nc),
+          temp3(Nc),
+          En(Nc),
+          phi(Nc),
+          phiN(Nc),
+          U12(Nc),
+          U1m2(Nc),
+          U12Dag(Nc),
+          U2m1(Nc),
+          one(Nc, 1.) {}
+
+    Matrix Ux;
+    Matrix Uy;
+    Matrix temp1;
+    Matrix temp2;
+    Matrix temp3;
+    Matrix En;
+    Matrix phi;
+    Matrix phiN;
+    Matrix U12;
+    Matrix U1m2;
+    Matrix U12Dag;
+    Matrix U2m1;
+    Matrix one;
+    complex<double> trace;
+};
+
+void evolveUTeam(
+    Lattice *lat, int N, double g, double dtau, double tau,
+    EvolveUScratch &scratch) {
+    const int n = 2;
+
+#pragma omp for
+    for (int pos = 0; pos < N * N; pos++) {
+        scratch.E1 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
+                     * lat->cells[pos]->getE1();
+
+        scratch.temp2 = scratch.one + 1. / (double)n * scratch.E1;
+        for (int in = 0; in < n - 1; in++) {
+            scratch.temp1 = scratch.E1 * scratch.temp2;
+            scratch.temp2 =
+                scratch.one + 1. / (double)(n - 1 - in) * scratch.temp1;
+        }
+
+        scratch.E1 = scratch.temp2;
+
+        scratch.E2 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
+                     * lat->cells[pos]->getE2();
+
+        scratch.temp2 = scratch.one + 1. / (double)n * scratch.E2;
+        for (int in = 0; in < n - 1; in++) {
+            scratch.temp1 = scratch.E2 * scratch.temp2;
+            scratch.temp2 =
+                scratch.one + 1. / (double)(n - 1 - in) * scratch.temp1;
+        }
+
+        scratch.E2 = scratch.temp2;
+
+        lat->cells[pos]->setUx(scratch.E1 * lat->cells[pos]->getUx());
+        lat->cells[pos]->setUy(scratch.E2 * lat->cells[pos]->getUy());
+    }
+}
+
+void evolvePhiTeam(
+    Lattice *lat, int N, double dtau, double tau,
+    EvolvePhiScratch &scratch) {
+#pragma omp for
+    for (int pos = 0; pos < N * N; pos++) {
+        scratch.phi = lat->cells[pos]->getphi();
+        scratch.pi = lat->cells[pos]->getpi();
+
+        scratch.phi = scratch.phi + (tau + dtau / 2.) * dtau * scratch.pi;
+
+        lat->cells[pos]->setphi(scratch.phi);
+    }
+}
+
+void evolvePiTeam(
+    Lattice *lat, int N, double dtau, double tau,
+    EvolvePiScratch &scratch) {
+#pragma omp for
+    for (int pos = 0; pos < N * N; pos++) {
+        scratch.Ux = lat->cells[pos]->getUx();
+        scratch.Uy = lat->cells[pos]->getUy();
+        scratch.pi = lat->cells[pos]->getpi();
+        scratch.phi = lat->cells[pos]->getphi();
+
+        scratch.phiX =
+            scratch.Ux
+            * scratch.Ux.prodABconj(
+                lat->cells[lat->pospX[pos]]->getphi(), scratch.Ux);
+        scratch.phiY =
+            scratch.Uy
+            * scratch.Uy.prodABconj(
+                lat->cells[lat->pospY[pos]]->getphi(), scratch.Uy);
+
+        scratch.UxXm1 = lat->cells[lat->posmX[pos]]->getUx();
+        scratch.UyYm1 = lat->cells[lat->posmY[pos]]->getUy();
+
+        scratch.phimX =
+            scratch.Ux.prodAconjB(
+                scratch.UxXm1, lat->cells[lat->posmX[pos]]->getphi())
+            * scratch.UxXm1;
+        scratch.phimY =
+            scratch.Ux.prodAconjB(
+                scratch.UyYm1, lat->cells[lat->posmY[pos]]->getphi())
+            * scratch.UyYm1;
+
+        scratch.bracket = scratch.phiX + scratch.phimX + scratch.phiY
+                          + scratch.phimY - 4. * scratch.phi;
+
+        scratch.pi += dtau / (tau)*scratch.bracket;
+
+        lat->cells[pos]->setpi(scratch.pi);
+    }
+}
+
+void evolveETeam(
+    Lattice *lat, int N, int Nc, double g, double dtau, double tau,
+    EvolveEScratch &scratch) {
+    const complex<double> coeffPlaq =
+        complex<double>(0., 1.) * tau * dtau / (2. * g * g);
+    const complex<double> coeffComm =
+        complex<double>(0., 1.) * dtau / tau;
+
+#pragma omp for
+    for (int pos = 0; pos < N * N; pos++) {
+        const int posmXpY = lat->posmXpY[pos];
+        const int pospXmY = lat->pospXmY[pos];
+
+        scratch.En = lat->cells[pos]->getE1();
+        scratch.phi = lat->cells[pos]->getphi();
+        scratch.phiN = lat->cells[lat->pospX[pos]]->getphi();
+        scratch.Ux = lat->cells[pos]->getUx();
+        scratch.phiN =
+            scratch.Ux
+            * scratch.Ux.prodABconj(scratch.phiN, scratch.Ux);
+
+        scratch.Uy = lat->cells[pos]->getUy();
+        scratch.temp1 = lat->cells[lat->pospY[pos]]->getUx();
+        scratch.temp1.conjg();
+        scratch.U12 =
+            (scratch.Ux * lat->cells[lat->pospX[pos]]->getUy())
+            * (scratch.Ux.prodABconj(scratch.temp1, scratch.Uy));
+
+        scratch.temp1 = lat->cells[lat->posmY[pos]]->getUx();
+        scratch.temp2 = lat->cells[pospXmY]->getUy();
+        scratch.U1m2 =
+            (scratch.Ux.prodABconj(scratch.Ux, scratch.temp2))
+            * (scratch.Ux.prodAconjB(
+                scratch.temp1, lat->cells[lat->posmY[pos]]->getUy()));
+
+        scratch.temp1 = lat->cells[lat->posmX[pos]]->getUy();
+        scratch.temp2 = lat->cells[posmXpY]->getUx();
+        scratch.U2m1 =
+            (scratch.Ux.prodABconj(scratch.Uy, scratch.temp2))
+            * (scratch.Ux.prodAconjB(
+                scratch.temp1, lat->cells[lat->posmX[pos]]->getUx()));
+
+        scratch.U12Dag = scratch.U12;
+        scratch.U12Dag.conjg();
+
+        scratch.temp3 = scratch.U1m2;
+        scratch.temp3.conjg();
+
+        scratch.temp1 = scratch.U12;
+        scratch.temp1 += scratch.U1m2;
+        scratch.temp1 -= scratch.U12Dag;
+        scratch.temp1 -= scratch.temp3;
+
+        scratch.trace = scratch.temp1.trace();
+        scratch.temp1 -=
+            scratch.trace / static_cast<double>(Nc) * scratch.one;
+
+        scratch.temp2 =
+            scratch.phiN * scratch.phi - scratch.phi * scratch.phiN;
+
+        scratch.En += coeffPlaq * scratch.temp1 + coeffComm * scratch.temp2;
+
+        scratch.trace = scratch.En.trace();
+        scratch.En -=
+            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
+        lat->cells[pos]->setE1(scratch.En);
+
+        scratch.temp3 = scratch.U2m1;
+        scratch.temp3.conjg();
+
+        scratch.temp1 = scratch.U12Dag;
+        scratch.temp1 += scratch.U2m1;
+        scratch.temp1 -= scratch.U12;
+        scratch.temp1 -= scratch.temp3;
+        scratch.trace = scratch.temp1.trace();
+        scratch.temp1 -=
+            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
+
+        scratch.phiN = lat->cells[lat->pospY[pos]]->getphi();
+        scratch.phiN =
+            scratch.Uy
+            * scratch.Uy.prodABconj(scratch.phiN, scratch.Uy);
+
+        scratch.temp2 =
+            scratch.phiN * scratch.phi - scratch.phi * scratch.phiN;
+
+        scratch.En = lat->cells[pos]->getE2();
+        scratch.En += coeffPlaq * scratch.temp1 + coeffComm * scratch.temp2;
+
+        scratch.trace = scratch.En.trace();
+        scratch.En -=
+            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
+        lat->cells[pos]->setE2(scratch.En);
+    }
+}
+
+void addTeamPhase(const char *phase, double started) {
+    ipg::Profiler::instance().add(phase, ipg::wallSeconds() - started);
+}
+
+void evolveStepPersistent(
+    Lattice *lat, Parameters *param, double dtau, double tau,
+    bool updateCoordinates) {
+    IPG_PROFILE_SCOPE("evolution.parallel_step");
+    const int Nc = param->getNc();
+    const int N = param->getSize();
+    const double g = param->getg();
+    double phaseStart = 0.0;
+
+#pragma omp parallel shared(phaseStart)
+    {
+        EvolveUScratch uScratch(Nc);
+        EvolvePhiScratch phiScratch(Nc);
+        EvolvePiScratch piScratch(Nc);
+        EvolveEScratch eScratch(Nc);
+
+#pragma omp single
+        { phaseStart = ipg::wallSeconds(); }
+        evolvePiTeam(lat, N, dtau, tau, piScratch);
+#pragma omp single
+        {
+            addTeamPhase("evolution.evolvePi", phaseStart);
+            phaseStart = ipg::wallSeconds();
+        }
+
+        evolveETeam(lat, N, Nc, g, dtau, tau, eScratch);
+#pragma omp single
+        {
+            addTeamPhase("evolution.evolveE", phaseStart);
+            phaseStart = ipg::wallSeconds();
+        }
+
+        if (updateCoordinates) {
+            evolvePhiTeam(lat, N, dtau, tau, phiScratch);
+#pragma omp single
+            {
+                addTeamPhase("evolution.evolvePhi", phaseStart);
+                phaseStart = ipg::wallSeconds();
+            }
+
+            evolveUTeam(lat, N, g, dtau, tau, uScratch);
+#pragma omp single
+            { addTeamPhase("evolution.evolveU", phaseStart); }
+        }
+    }
+}
+
+}  // namespace
+
 void Evolution::evolveU(
     Lattice *lat, Parameters *param, double dtau, double tau) {
     IPG_PROFILE_SCOPE("evolution.evolveU");
-    // tau is the current time. The time argument of E^i is tau+dtau/2
-    // we evolve to tau+dtau
     const int Nc = param->getNc();
     const int N = param->getSize();
     const double g = param->getg();
 
-    const int n = 2;
-    const Matrix one(Nc, 1.);
-
 #pragma omp parallel
     {
-        Matrix E1(Nc);
-        Matrix E2(Nc);
-
-        Matrix temp1(Nc);
-        Matrix temp2(Nc);
-
-#pragma omp for
-        for (int pos = 0; pos < N * N; pos++) {
-            // retrieve current E1 and E2 (that's the one defined at half a time
-            // step in the future (from tau))
-            E1 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
-                 * lat->cells[pos]->getE1();
-            // E1.expm(); // E1 now contains the exponential of i g^2
-            // dtau/(tau+dtau/2)*E1
-
-            temp2 = one + 1. / (double)n * E1;
-            for (int in = 0; in < n - 1; in++) {
-                temp1 = E1 * temp2;
-                temp2 = one + 1. / (double)(n - 1 - in) * temp1;
-            }
-
-            E1 = temp2;
-
-            E2 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
-                 * lat->cells[pos]->getE2();
-            // E2.expm(); // E2 now contains the exponential of i g^2
-            // dtau/(tau+dtau/2)*E2
-
-            temp2 = one + 1. / (double)n * E2;
-            for (int in = 0; in < n - 1; in++) {
-                temp1 = E2 * temp2;
-                temp2 = one + 1. / (double)(n - 1 - in) * temp1;
-            }
-
-            E2 = temp2;
-
-            lat->cells[pos]->setUx(E1 * lat->cells[pos]->getUx());
-            lat->cells[pos]->setUy(E2 * lat->cells[pos]->getUy());
-        }
+        EvolveUScratch scratch(Nc);
+        evolveUTeam(lat, N, g, dtau, tau, scratch);
     }
 }
 
 void Evolution::evolvePhi(
     Lattice *lat, Parameters *param, double dtau, double tau) {
     IPG_PROFILE_SCOPE("evolution.evolvePhi");
-    // tau is the current time. The time argument of pi is tau+dtau/2
-    // we evolve to tau+dtau
     const int Nc = param->getNc();
     const int N = param->getSize();
 
 #pragma omp parallel
     {
-        Matrix phi(Nc);
-        Matrix pi(Nc);
-
-#pragma omp for
-        for (int pos = 0; pos < N * N; pos++) {
-            // retrieve current phi (at time tau)
-            phi = lat->cells[pos]->getphi();
-            // retrieve current pi (at time tau+dtau/2)
-            pi = lat->cells[pos]->getpi();
-
-            phi = phi + (tau + dtau / 2.) * dtau * pi;
-
-            // set the new phi (at time tau+dtau)
-            lat->cells[pos]->setphi(phi);
-        }
+        EvolvePhiScratch scratch(Nc);
+        evolvePhiTeam(lat, N, dtau, tau, scratch);
     }
 }
 
@@ -129,59 +390,8 @@ void Evolution::evolvePi(
 
 #pragma omp parallel
     {
-        Matrix Ux(Nc);
-        Matrix Uy(Nc);
-        Matrix UxXm1(Nc);
-        Matrix UyYm1(Nc);
-
-        Matrix phi(Nc);
-        Matrix phiX(Nc);   // this is \tilde{phi}_x
-        Matrix phiY(Nc);   // this is \tilde{phi}_y
-        Matrix phimX(Nc);  // this is \tilde{-phi}_x
-        Matrix phimY(Nc);  // this is \tilde{-phi}_y
-
-        // this will hold [phiX+phimX-2*phi+phiY+phimY-2*phi]
-        Matrix bracket(Nc);
-        Matrix pi(Nc);
-
-#pragma omp for
-        for (int pos = 0; pos < N * N; pos++) {
-            // retrieve current Ux and Uy and compute conjugates
-            Ux = lat->cells[pos]->getUx();
-            Uy = lat->cells[pos]->getUy();
-            // retrieve current pi (at time tau-dtau/2)
-            pi = lat->cells[pos]->getpi();
-            // retrieve current phi (at time tau) at this x_T
-            phi = lat->cells[pos]->getphi();
-
-            // retrieve current phi (at time tau) at x_T+1
-            // parallel transport:
-            phiX =
-                Ux * Ux.prodABconj(lat->cells[lat->pospX[pos]]->getphi(), Ux);
-            phiY =
-                Uy * Uy.prodABconj(lat->cells[lat->pospY[pos]]->getphi(), Uy);
-
-            // phi_{-x} should be defined as UxD*phimX*Ux with the Ux and UxD
-            // reversed from the phi_{+x} case retrieve current phi (at time
-            // tau) at x_T-1 parallel transport:
-            UxXm1 = lat->cells[lat->posmX[pos]]->getUx();
-            UyYm1 = lat->cells[lat->posmY[pos]]->getUy();
-
-            phimX = Ux.prodAconjB(UxXm1, lat->cells[lat->posmX[pos]]->getphi())
-                    * UxXm1;
-            phimY = Ux.prodAconjB(UyYm1, lat->cells[lat->posmY[pos]]->getphi())
-                    * UyYm1;
-
-            // sum over both directions is included here
-            bracket = phiX + phimX + phiY + phimY - 4. * phi;
-
-            pi += dtau / (tau)*bracket;  // divide by \tau because this is
-                                         // computing pi(tau+dtau/2) from
-                                         // pi(tau-dtau/2) and phi(tau)
-
-            // set the new pi (at time tau+dtau/2)
-            lat->cells[pos]->setpi(pi);
-        }
+        EvolvePiScratch scratch(Nc);
+        evolvePiTeam(lat, N, dtau, tau, scratch);
     }
 }
 
@@ -192,115 +402,10 @@ void Evolution::evolveE(
     const int N = param->getSize();
     const double g = param->getg();
 
-    // Loop-invariant coefficients, computed once instead of per cell. The
-    // arithmetic that consumes them below is written in the identical order,
-    // so results are bit-for-bit unchanged.
-    const complex<double> coeffPlaq = complex<double>(0., 1.) * tau * dtau
-                                      / (2. * g * g);
-    const complex<double> coeffComm = complex<double>(0., 1.) * dtau / tau;
-
 #pragma omp parallel
     {
-        Matrix Ux(Nc);
-        Matrix Uy(Nc);
-        Matrix temp1(Nc);  // can contain p or m
-        Matrix temp2(Nc);
-        Matrix temp3(Nc);
-        Matrix En(Nc);
-        Matrix phi(Nc);
-        Matrix phiN(Nc);  // this is \tilde{phi}_x OR \tilde{phi}_y
-
-        // plaquettes:
-        Matrix U12(Nc);
-        Matrix U1m2(Nc);
-        Matrix U12Dag(Nc);  // equals (U21)
-        Matrix U2m1(Nc);
-        complex<double> trace;
-        Matrix one(Nc, 1.);
-
-#pragma omp for
-        for (int pos = 0; pos < N * N; pos++) {
-            const int posmXpY = lat->posmXpY[pos];
-            const int pospXmY = lat->pospXmY[pos];
-
-            // retrieve current E1 and E2 (that's the one defined at tau-dtau/2)
-            En = lat->cells[pos]->getE1();
-            // retrieve current phi (at time tau) at this x_T
-            phi = lat->cells[pos]->getphi();
-            // retrieve current phi (at time tau) at x_T+1
-            phiN = lat->cells[lat->pospX[pos]]->getphi();
-            // parallel transport:
-            // retrieve current Ux and Uy
-            Ux = lat->cells[pos]->getUx();
-            phiN = Ux * Ux.prodABconj(phiN, Ux);
-
-            // compute plaquettes:
-            Uy = lat->cells[pos]->getUy();
-            temp1 = lat->cells[lat->pospY[pos]]->getUx();  // UxYp1Dag
-            temp1.conjg();
-            U12 = (Ux * lat->cells[lat->pospX[pos]]->getUy())
-                  * (Ux.prodABconj(temp1, Uy));
-
-            temp1 = lat->cells[lat->posmY[pos]]->getUx();  // UxYm1Dag
-            temp2 = lat->cells[pospXmY]->getUy();          // UyXp1Ym1Dag
-            U1m2 =
-                (Ux.prodABconj(Ux, temp2))
-                * (Ux.prodAconjB(temp1, lat->cells[lat->posmY[pos]]->getUy()));
-
-            temp1 = lat->cells[lat->posmX[pos]]->getUy();  // UyXm1Dag
-            temp2 = lat->cells[posmXpY]->getUx();          // UxXm1Yp1Dag
-            U2m1 =
-                (Ux.prodABconj(Uy, temp2))
-                * (Ux.prodAconjB(temp1, lat->cells[lat->posmX[pos]]->getUx()));
-
-            U12Dag = U12;
-            U12Dag.conjg();
-
-            // do E1 update:
-
-            temp3 = U1m2;
-            temp3.conjg();
-
-            temp1 = U12;
-            temp1 += U1m2;
-            temp1 -= U12Dag;
-            temp1 -= temp3;
-
-            trace = temp1.trace();
-            temp1 -= trace / static_cast<double>(Nc) * one;
-
-            temp2 = phiN * phi - phi * phiN;
-
-            En += coeffPlaq * temp1 + coeffComm * temp2;
-
-            trace = En.trace();
-            En -= (trace / static_cast<double>(Nc)) * one;
-            lat->cells[pos]->setE1(En);
-
-            // do E2 update:
-
-            temp3 = U2m1;
-            temp3.conjg();
-
-            temp1 = U12Dag;
-            temp1 += U2m1;
-            temp1 -= U12;
-            temp1 -= temp3;
-            trace = temp1.trace();
-            temp1 -= (trace / static_cast<double>(Nc)) * one;
-
-            phiN = lat->cells[lat->pospY[pos]]->getphi();
-            phiN = Uy * Uy.prodABconj(phiN, Uy);
-
-            temp2 = phiN * phi - phi * phiN;
-
-            En = lat->cells[pos]->getE2();
-            En += coeffPlaq * temp1 + coeffComm * temp2;
-
-            trace = En.trace();
-            En -= (trace / static_cast<double>(Nc)) * one;
-            lat->cells[pos]->setE2(En);
-        }
+        EvolveEScratch scratch(Nc);
+        evolveETeam(lat, N, Nc, g, dtau, tau, scratch);
     }
 }
 
@@ -655,21 +760,13 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
             cout << "Evolving to time " << it * a * dtau << " fm/c" << endl;
         }
 
-        // evolve from time tau-dtau/2 to tau+dtau/2
+        // Keep one OpenMP team alive across all leapfrog kernels in this
+        // time step. The worksharing loops retain their implicit barriers,
+        // preserving the Pi -> E -> phi -> U update order.
         if (it < itmax) {
-            evolvePi(lat, param, dtau, (it)*dtau);
-            // the last argument is the current time tau.
-
-            evolveE(lat, param, dtau, (it)*dtau);
-
-            // evolve from time tau to tau+dtau
-            evolvePhi(lat, param, dtau, (it)*dtau);
-            evolveU(lat, param, dtau, (it)*dtau);
-        } else if (it == itmax) {
-            evolvePi(lat, param, dtau / 2., (it)*dtau);
-            // the last argument is the current time tau.
-
-            evolveE(lat, param, dtau / 2., (it)*dtau);
+            evolveStepPersistent(lat, param, dtau, (it)*dtau, true);
+        } else {
+            evolveStepPersistent(lat, param, dtau / 2., (it)*dtau, false);
         }
 
         if (it == 1 && param->getWriteOutputs() == 3) {
