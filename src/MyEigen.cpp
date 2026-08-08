@@ -2,7 +2,10 @@
 // Copyright (C) 2012 Bjoern Schenke.
 #include "MyEigen.h"
 
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -42,6 +45,75 @@ void closeBufferedTextOutput(ofstream &output, const string &filename) {
     output.close();
     if (!output) {
         throw std::runtime_error("failed while writing output file " + filename);
+    }
+}
+
+
+bool binaryTmunuEnabled() {
+    const char *value = std::getenv("IPGLASMA_BINARY_TMUNU");
+    if (value == NULL || value[0] == '\0') return false;
+    const string text(value);
+    return !(text == "0" || text == "false" || text == "FALSE"
+             || text == "off" || text == "OFF" || text == "no"
+             || text == "NO");
+}
+
+bool littleEndianHost() {
+    const std::uint16_t probe = 1;
+    return *reinterpret_cast<const unsigned char *>(&probe) == 1;
+}
+
+void writeUint32LittleEndian(ofstream &output, std::uint32_t value) {
+    const unsigned char bytes[4] = {
+        static_cast<unsigned char>(value & 0xffu),
+        static_cast<unsigned char>((value >> 8) & 0xffu),
+        static_cast<unsigned char>((value >> 16) & 0xffu),
+        static_cast<unsigned char>((value >> 24) & 0xffu)};
+    output.write(reinterpret_cast<const char *>(bytes), sizeof(bytes));
+}
+
+void openTmunuBinaryOutput(
+    ofstream &output, const string &filename, int hx, int hy, int heta,
+    double tauFm, double deta, double dxFm, int eventId) {
+    if (!littleEndianHost()) {
+        throw std::runtime_error(
+            "binary Tmunu output currently requires a little-endian host");
+    }
+        output.open(
+        filename.c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("could not open output file " + filename);
+    }
+
+    std::ostringstream metadata;
+    metadata << std::setprecision(17)
+             << "{\"format\":\"ipglasma-tmunu\","
+             << "\"version\":1,"
+             << "\"dtype\":\"<f4\","
+             << "\"shape\":[" << hy << "," << hx << ",10],"
+             << "\"axis_order\":[\"y\",\"x\",\"component\"],"
+             << "\"components\":[\"T00\",\"Txx\",\"Tyy\","
+                "\"tau2_Tetaeta\",\"neg_T0x\",\"neg_T0y\","
+                "\"neg_tau_T0eta\",\"neg_Txy\",\"neg_tau_Tyeta\","
+                "\"neg_tau_Txeta\"],"
+             << "\"tau_fm\":" << tauFm << ","
+             << "\"eta_points\":" << heta << ","
+             << "\"deta\":" << deta << ","
+             << "\"dx_fm\":" << dxFm << ","
+             << "\"dy_fm\":" << dxFm << ","
+             << "\"event_id\":" << eventId << "}";
+    const string metadataText = metadata.str();
+    if (metadataText.size() > 0xffffffffu) {
+        throw std::runtime_error("binary Tmunu metadata is unexpectedly large");
+    }
+
+    static const char magic[8] = {'I', 'P', 'G', 'T', 'M', 'U', '0', '1'};
+    output.write(magic, sizeof(magic));
+    writeUint32LittleEndian(
+        output, static_cast<std::uint32_t>(metadataText.size()));
+    output.write(metadataText.data(), static_cast<std::streamsize>(metadataText.size()));
+    if (!output) {
+        throw std::runtime_error("failed while writing Tmunu header " + filename);
     }
 }
 
@@ -875,17 +947,29 @@ void MyEigen::flowVelocity4D(
         double resultT00, resultT0x, resultT0y, resultT0eta, resultTxx,
             resultTxy;
         double resultTxeta, resultTyy, resultTyeta, resultTetaeta;
+        const bool writeBinaryTmunu = binaryTmunuEnabled();
         stringstream strTmunu_name;
         strTmunu_name << "Tmunu-t" << it * dtau * a << "-"
-                      << param->getEventId() << ".dat";
-        IPG_PROFILE_SCOPE("output.tmunu_text");
+                      << param->getEventId()
+                      << (writeBinaryTmunu ? ".ipgt" : ".dat");
+        IPG_PROFILE_SCOPE(
+            writeBinaryTmunu ? "output.tmunu_binary" : "output.tmunu_text");
         const string outputFilename = strTmunu_name.str();
-        vector<char> outputBuffer(kTextOutputBufferBytes);
         ofstream foutEps1;
-        openBufferedTextOutput(foutEps1, outputBuffer, outputFilename);
-        foutEps1 << "# dummy " << 1 << " etamax= " << heta << " xmax= " << hx
-                 << " ymax= " << hy << " deta= " << deta << " dx= " << ha
-                 << " dy= " << ha << '\n';
+        vector<char> outputBuffer;
+        vector<float> binaryRow;
+        if (writeBinaryTmunu) {
+            openTmunuBinaryOutput(
+                foutEps1, outputFilename, hx, hy, heta, tau0, deta, ha,
+                param->getEventId());
+            binaryRow.resize(static_cast<std::size_t>(hx) * 10u);
+        } else {
+            outputBuffer.resize(kTextOutputBufferBytes);
+            openBufferedTextOutput(foutEps1, outputBuffer, outputFilename);
+            foutEps1 << "# dummy " << 1 << " etamax= " << heta << " xmax= " << hx
+                     << " ymax= " << hy << " deta= " << deta << " dx= " << ha
+                     << " dy= " << ha << '\n';
+        }
         // loop over all positions
         for (int iy = 0; iy < hy; iy++) {
             for (int ix = 0; ix < hx; ix++) {
@@ -1089,34 +1173,64 @@ void MyEigen::flowVelocity4D(
                     }
                     resultTetaeta = (1. - fracy) * x1 + fracy * x2;
 
+                    double values[10];
                     if (resultT00 * gfactor * hbarc > small_eps) {
-                        foutEps1
-                            << ix << " " << iy << " "
-                            << resultT00 * gfactor * hbarc << " "
-                            << resultTxx * gfactor * hbarc << " "
-                            << resultTyy * gfactor * hbarc << " "
-                            << tau0 * tau0 * resultTetaeta * gfactor * hbarc
-                            << " " << -resultT0x * gfactor * hbarc << " "
-                            << -resultT0y * gfactor * hbarc << " "
-                            << -tau0 * resultT0eta * gfactor * hbarc << " "
-                            << -resultTxy * gfactor * hbarc << " "
-                            << -tau0 * resultTyeta * gfactor * hbarc << " "
-                            << -tau0 * resultTxeta * gfactor * hbarc << '\n';
+                        values[0] = resultT00 * gfactor * hbarc;
+                        values[1] = resultTxx * gfactor * hbarc;
+                        values[2] = resultTyy * gfactor * hbarc;
+                        values[3] = tau0 * tau0 * resultTetaeta * gfactor * hbarc;
+                        values[4] = -resultT0x * gfactor * hbarc;
+                        values[5] = -resultT0y * gfactor * hbarc;
+                        values[6] = -tau0 * resultT0eta * gfactor * hbarc;
+                        values[7] = -resultTxy * gfactor * hbarc;
+                        values[8] = -tau0 * resultTyeta * gfactor * hbarc;
+                        values[9] = -tau0 * resultTxeta * gfactor * hbarc;
                     } else {
-                        foutEps1 << ix << " " << iy << " " << small_eps << " "
-                                 << small_eps / 2. << " " << small_eps / 2.
-                                 << " " << 0.0 << " " << 0.0 << " " << 0.0
-                                 << " " << 0.0 << " " << 0.0 << " " << 0.0
-                                 << " " << 0.0 << '\n';
+                        values[0] = small_eps;
+                        values[1] = small_eps / 2.;
+                        values[2] = small_eps / 2.;
+                        for (int component = 3; component < 10; ++component) {
+                            values[component] = 0.0;
+                        }
+                    }
+                    if (writeBinaryTmunu) {
+                        const std::size_t offset = static_cast<std::size_t>(ix) * 10u;
+                        for (int component = 0; component < 10; ++component) {
+                            binaryRow[offset + component] = static_cast<float>(values[component]);
+                        }
+                    } else {
+                        foutEps1 << ix << " " << iy;
+                        for (int component = 0; component < 10; ++component) {
+                            foutEps1 << " " << values[component];
+                        }
+                        foutEps1 << '\n';
                     }
                 } else {
-                    foutEps1 << ix << " " << iy << " " << small_eps << " "
-                             << small_eps / 2. << " " << small_eps / 2. << " "
-                             << 0.0 << " " << 0.0 << " " << 0.0 << " " << 0.0
-                             << " " << 0.0 << " " << 0.0 << " " << 0.0 << '\n';
+                    double values[10] = {
+                        small_eps, small_eps / 2., small_eps / 2.,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                    if (writeBinaryTmunu) {
+                        const std::size_t offset = static_cast<std::size_t>(ix) * 10u;
+                        for (int component = 0; component < 10; ++component) {
+                            binaryRow[offset + component] = static_cast<float>(values[component]);
+                        }
+                    } else {
+                        foutEps1 << ix << " " << iy;
+                        for (int component = 0; component < 10; ++component) {
+                            foutEps1 << " " << values[component];
+                        }
+                        foutEps1 << '\n';
+                    }
                 }
             }
-            foutEps1 << '\n';
+            if (writeBinaryTmunu) {
+                foutEps1.write(
+                    reinterpret_cast<const char *>(binaryRow.data()),
+                    static_cast<std::streamsize>(
+                        binaryRow.size() * sizeof(binaryRow[0])));
+            } else {
+                foutEps1 << '\n';
+            }
         }
         closeBufferedTextOutput(foutEps1, outputFilename);
     }
