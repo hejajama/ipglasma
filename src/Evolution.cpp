@@ -307,6 +307,12 @@ void addTeamPhase(const char *phase, double started) {
     ipg::Profiler::instance().add(phase, ipg::wallSeconds() - started);
 }
 
+void addPhaseAndRestart(const char *phase, double &started) {
+    const double now = ipg::wallSeconds();
+    ipg::Profiler::instance().add(phase, now - started);
+    started = now;
+}
+
 void evolveStepPersistent(
     Lattice *lat, Parameters *param, double dtau, double tau,
     bool updateCoordinates) {
@@ -485,6 +491,7 @@ void Evolution::checkGaussLaw(Lattice *lat, Parameters *param) {
 
 void Evolution::writeEvolvedFields(
     Lattice *lat, Parameters *param, int it) {
+  IPG_PROFILE_SCOPE("output.evolved_fields");
   const int N = param->getSize();
   const int Nc = param->getNc();
   const double a = param->getL() / static_cast<double>(N);
@@ -621,6 +628,7 @@ void Evolution::writeGluonMultiplicityTarget(
     double dNCut6, double dECut6,
     const double *spectrumN, const double *spectrumE,
     const int *spectrumCounts, int bins, double dkt) {
+  IPG_PROFILE_SCOPE("output.gluon_target");
   stringstream filename;
   filename << "gluonMultiplicity" << param->getEventId() << ".json";
   ofstream output(filename.str().c_str(), std::ios::out | std::ios::trunc);
@@ -719,8 +727,11 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     // Save the initialized forward-light-cone state at tau=0+.
     //writeEvolvedFields(lat, param, 0);
   }
-    evolvePhi(lat, param, dtau, 0.);
-    evolveU(lat, param, dtau, 0.);
+    {
+        IPG_PROFILE_SCOPE("evolution.initial_coordinate_half_step");
+        evolvePhi(lat, param, dtau, 0.);
+        evolveU(lat, param, dtau, 0.);
+    }
 
     int itmax = static_cast<int>(maxtime / (a * dtau) + 0.00000000001);
     int it0   = static_cast<int>(0.1/(a*dtau) + 0.0000000001);
@@ -783,6 +794,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
         }
 
         if (it == 1 && param->getWriteOutputs() == 3) {
+            IPG_PROFILE_SCOPE("output.epsilon_initial_text");
             stringstream streI_name;
             streI_name << "epsilonInitialPlot" << param->getEventId() << ".dat";
             string eI_name;
@@ -864,6 +876,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
         }
 
         if (it == itmax / 2 && param->getWriteOutputs() == 3) {
+            IPG_PROFILE_SCOPE("output.epsilon_intermediate_text");
             stringstream streInt_name;
             streInt_name << "epsilonIntermediatePlot" << param->getEventId()
                          << ".dat";
@@ -1618,6 +1631,7 @@ void Evolution::anisotropy(Lattice *lat, Parameters *param, int it) {
 
 void Evolution::eccentricity(
     Lattice *lat, Parameters *param, int it, double cutoff, int doAniso) {
+    IPG_PROFILE_SCOPE("observables.eccentricity");
     stringstream strecc_name;
     strecc_name << "eccentricities" << param->getEventId() << ".dat";
     string ecc_name;
@@ -2622,6 +2636,7 @@ void Evolution::readNkt(Parameters *param) {
 
 int Evolution::multiplicity(
     Lattice *lat, Group *group, Parameters *param, int it) {
+    IPG_PROFILE_SCOPE("observables.gluon_multiplicity");
     int N = param->getSize();
     int Nc = param->getNc();
     int npos, pos;
@@ -2669,7 +2684,10 @@ int Evolution::multiplicity(
 
     int itmax = static_cast<int>(floor(maxtime / (a * dtau) + 1e-10));
 
+    double multiplicityPhaseStart = ipg::wallSeconds();
     gaugefix.FFTChi(fft, lat, group, param, 4000);
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.gauge_fix", multiplicityPhaseStart);
     // gauge is fixed
 
     Matrix **E1;
@@ -2678,6 +2696,8 @@ int Evolution::multiplicity(
     for (int i = 0; i < N * N; i++) {
         E1[i] = new Matrix(Nc, 0.);
     }
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.allocate", multiplicityPhaseStart);
 
     double g2mu2A, g2mu2B, gfactor, alphas = 0., Qs = 0.;
     double c = param->getc();
@@ -2790,8 +2810,13 @@ int Evolution::multiplicity(
         }
     }
 
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.prepare_E1", multiplicityPhaseStart);
+
     // do Fourier transforms
     fft->fftn(E1, E1, nn, 1);
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.fft_E1", multiplicityPhaseStart);
 
     for (int ik = 0; ik < bins; ik++) {
         n[ik] = 0.;
@@ -2812,6 +2837,9 @@ int Evolution::multiplicity(
     //     NhL[ih]=0.;
     //     NhH[ih]=0.;
     //   }
+
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.setup_bins", multiplicityPhaseStart);
 
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
@@ -2874,6 +2902,9 @@ int Evolution::multiplicity(
             }
         }
     }
+
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.spectrum_E1", multiplicityPhaseStart);
 
     /// -------- 2 ---------
 
@@ -2982,7 +3013,12 @@ int Evolution::multiplicity(
         }
     }
 
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.prepare_E2", multiplicityPhaseStart);
+
     fft->fftn(E1, E1, nn, 1);
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.fft_E2", multiplicityPhaseStart);
 
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
@@ -3047,6 +3083,9 @@ int Evolution::multiplicity(
             }
         }
     }
+
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.spectrum_E2", multiplicityPhaseStart);
 
     /// ------3 --------
 
@@ -3158,8 +3197,13 @@ int Evolution::multiplicity(
         }
     }
 
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.prepare_pi", multiplicityPhaseStart);
+
     // do Fourier transforms
     fft->fftn(E1, E1, nn, 1);
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.fft_pi", multiplicityPhaseStart);
 
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
@@ -3224,6 +3268,9 @@ int Evolution::multiplicity(
             }
         }
     }
+
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.spectrum_pi", multiplicityPhaseStart);
 
     double m, P;
     m = param->getJacobianm();                                // in GeV
@@ -3310,11 +3357,15 @@ int Evolution::multiplicity(
         }
     }
 
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.bin_postprocess", multiplicityPhaseStart);
+
     //  double dNdetaHadrons, dNdetaHadronsCut, dNdetaHadronsCut2;
     //  double dEdetaHadrons, dEdetaHadronsCut, dEdetaHadronsCut2;
 
     // compute hadrons using fragmentation function
     if (it == itmax && param->getWriteOutputs() == 3) {
+        const double hadronizationStart = ipg::wallSeconds();
         cout << " Hadronizing ... " << endl;
         double z, frac;
         double mypt, kt;
@@ -3451,6 +3502,10 @@ int Evolution::multiplicity(
 
         gsl_spline_free(ptspline);
         gsl_interp_accel_free(ptacc);
+        ipg::Profiler::instance().add(
+            "observables.gluon_multiplicity.hadronization",
+            ipg::wallSeconds() - hadronizationStart);
+        multiplicityPhaseStart = ipg::wallSeconds();
     }
 
     if (param->getUsePseudoRapidity() == 0 && param->getMPIRank() == 0) {
@@ -3478,14 +3533,18 @@ int Evolution::multiplicity(
         }
     }
 
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.report", multiplicityPhaseStart);
+
     if (dNdeta == 0.) {
         cout << "No collision happened on rank " << param->getMPIRank()
              << ". Restarting with new random number..." << endl;
         for (int i = 0; i < N * N; i++) {
             delete E1[i];
         }
-
         delete[] E1;
+        addPhaseAndRestart(
+            "observables.gluon_multiplicity.cleanup", multiplicityPhaseStart);
         return 0;
     }
 
@@ -3522,12 +3581,16 @@ int Evolution::multiplicity(
         n, E, counter, bins, dkt);
 
     }
+    addPhaseAndRestart(
+        "output.gluon_multiplicity", multiplicityPhaseStart);
 
     for (int i = 0; i < N * N; i++) {
         delete E1[i];
     }
 
     delete[] E1;
+    addPhaseAndRestart(
+        "observables.gluon_multiplicity.cleanup", multiplicityPhaseStart);
 
     cout << " done." << endl;
     param->setSuccess(1);
