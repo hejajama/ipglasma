@@ -20,6 +20,7 @@
 #include "Instrumentation.h"
 #include "MyEigen.h"
 #include "Phys_consts.h"
+#include "SU3.h"
 
 using Fragmentation::kkp;
 using PhysConst::hbarc;
@@ -737,23 +738,36 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     cout << " dtau = " << dtau << endl;
     cout << " it0 = " << it0 << endl;
 
-    
+
     // do evolution
     for (int it = 1; it <= itmax; it++) {
         if (it == itmax) {
             Tmunu(lat, param, it);
-    if (param->getWriteOutputs() == 5) {
-      // writeEvolvedFields(lat, param, it);
-    }
-            // computes flow velocity and correct energy density
-            u(lat, param, it, true);
+            if (param->getWriteOutputs() == 5) {
+              // writeEvolvedFields(lat, param, it);
+            }
+            // Hydro flow fields are optional. Tmunu output remains available
+            // through the lightweight writer when the expensive eigen solve is
+            // disabled.
+            if (param->getWriteEpsilonUHydro() != 0) {
+                u(lat, param, it, true);
+            } else {
+                MyEigen myeigen;
+                myeigen.writeTmunu4D(lat, param, it);
+            }
         }
 
         if ( (param->getWriteOutputs() == 5) && ( it == it0 || it == it1 || it == it2 || it == it3 )) {
             Tmunu(lat, param, it);
             //writeEvolvedFields(lat, param, it);
-            // computes flow velocity and correct energy density
-            u(lat, param, it, false);
+            // Preserve the historical intermediate-time finalFlag=false path
+            // when hydro output is enabled.
+            if (param->getWriteEpsilonUHydro() != 0) {
+                u(lat, param, it, false);
+            } else {
+                MyEigen myeigen;
+                myeigen.writeTmunu4D(lat, param, it);
+            }
         }
 
         if (it % 10 == 0) {
@@ -1109,47 +1123,35 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             piY = lat->cells[posY]->getpi();
             piXY = lat->cells[posXY]->getpi();
 
+            // These observables only need traces of matrix squares.  Computing
+            // the complete 3x3 products here used to create 32 Matrix
+            // temporaries per site (the same eight traces repeated for four
+            // tensor components).  Evaluate each SU(3) trace once and reuse it.
+            const double e1Sq = su3::traceSquare(E1).real();
+            const double e1pSq = su3::traceSquare(E1p).real();
+            const double e2Sq = su3::traceSquare(E2).real();
+            const double e2pSq = su3::traceSquare(E2p).real();
+            const double piSq = su3::traceSquare(pi).real();
+            const double piXSq = su3::traceSquare(piX).real();
+            const double piYSq = su3::traceSquare(piY).real();
+            const double piXYSq = su3::traceSquare(piXY).real();
+
+            const double invTau2 = 1. / (it * dtau) / (it * dtau);
+            const double electricPrefactor =
+                g * g / (it * dtau) / (it * dtau);
+            const double eSum = e1Sq + e1pSq + e2Sq + e2pSq;
+            const double piSum = piSq + piXSq + piYSq + piXYSq;
+
             lat->cells[pos]->setTtautau(
-                (g * g / (it * dtau) / (it * dtau)
-                     * real(
-                         (E1 * E1).trace() + (E1p * E1p).trace()
-                         + (E2 * E2).trace() + (E2p * E2p).trace())
-                     / 2.  // trans.
-                 + (((pi * pi).trace()).real() + ((piX * piX).trace()).real()
-                    + ((piY * piY).trace()).real()
-                    + ((piXY * piXY).trace()).real())
-                       / 4.));  // long.
+                electricPrefactor * eSum / 2. + piSum / 4.);
             lat->cells[pos]->setTxx(
-                (g * g / (it * dtau) / (it * dtau)
-                     * real(
-                         -1. * (E1 * E1).trace() - (E1p * E1p).trace()
-                         + (E2 * E2).trace() + (E2p * E2p).trace())
-                     / 2.  // trans.
-                 + (((pi * pi).trace()).real() + ((piX * piX).trace()).real()
-                    + ((piY * piY).trace()).real()
-                    + ((piXY * piXY).trace()).real())
-                       / 4.));  // long.
+                electricPrefactor * (-e1Sq - e1pSq + e2Sq + e2pSq) / 2.
+                + piSum / 4.);
             lat->cells[pos]->setTyy(
-                (g * g / (it * dtau) / (it * dtau)
-                     * real(
-                         (E1 * E1).trace() + (E1p * E1p).trace()
-                         - (E2 * E2).trace() - (E2p * E2p).trace())
-                     / 2.  // trans.
-                 + (((pi * pi).trace()).real() + ((piX * piX).trace()).real()
-                    + ((piY * piY).trace()).real()
-                    + ((piXY * piXY).trace()).real())
-                       / 4.));  // long.
+                electricPrefactor * (e1Sq + e1pSq - e2Sq - e2pSq) / 2.
+                + piSum / 4.);
             lat->cells[pos]->setTetaeta(
-                1. / (it * dtau) / (it * dtau)
-                * ((g * g / (it * dtau) / (it * dtau)
-                        * real(
-                            (E1 * E1).trace() + (E1p * E1p).trace()
-                            + (E2 * E2).trace() + (E2p * E2p).trace())
-                        / 2.  // trans.
-                    - (((pi * pi).trace()).real() + ((piX * piX).trace()).real()
-                       + ((piY * piY).trace()).real()
-                       + ((piXY * piXY).trace()).real())
-                          / 4.)));  // long.
+                invTau2 * (electricPrefactor * eSum / 2. - piSum / 4.));
         }
     }
 
@@ -1190,57 +1192,43 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             phiTildeXY1 = Ux * phiXY * UDx;
             phiTildeXY2 = Uy * phiXY * UDy;
 
+            // The four covariant-gradient square traces are likewise shared
+            // by all diagonal tensor components.  Evaluate (A-B)^2 directly
+            // in the trace kernel, avoiding both subtraction and product
+            // Matrix temporaries.
+            const double gradX0 =
+                su3::traceDifferenceSquare(phi, phiTildeX).real();
+            const double gradX1 =
+                su3::traceDifferenceSquare(phiY, phiTildeXY1).real();
+            const double gradY0 =
+                su3::traceDifferenceSquare(phi, phiTildeY).real();
+            const double gradY1 =
+                su3::traceDifferenceSquare(phiX, phiTildeXY2).real();
+            const double invTau2 = 1. / (it * dtau) / (it * dtau);
+            const double gradientPrefactor =
+                0.5 / (it * dtau) / (it * dtau);
+            const double plaquetteEnergy =
+                2. / pow(g, 2.)
+                * (static_cast<double>(Nc) - su3::trace(Uplaq).real());
+
             lat->cells[pos]->setTtautau(
-                lat->cells[pos]->getTtautau()
-                + 2. / pow(g, 2.)
-                      * (static_cast<double>(Nc) - (Uplaq.trace()).real())
-                + 0.5 / (it * dtau) / (it * dtau)
-                      * (real(((phi - phiTildeX) * (phi - phiTildeX)).trace())
-                         + real(((phiY - phiTildeXY1) * (phiY - phiTildeXY1))
-                                    .trace())
-                         + real(((phi - phiTildeY) * (phi - phiTildeY)).trace())
-                         + real(((phiX - phiTildeXY2) * (phiX - phiTildeXY2))
-                                    .trace())));
+                lat->cells[pos]->getTtautau() + plaquetteEnergy
+                + gradientPrefactor * (gradX0 + gradX1 + gradY0 + gradY1));
 
             lat->cells[pos]->setTxx(
-                lat->cells[pos]->getTxx()
-                + 2. / pow(g, 2.)
-                      * (static_cast<double>(Nc) - (Uplaq.trace()).real())
-                + 0.5 / (it * dtau) / (it * dtau)
-                      * (real(((phi - phiTildeX) * (phi - phiTildeX)).trace())
-                         + real(((phiY - phiTildeXY1) * (phiY - phiTildeXY1))
-                                    .trace())
-                         - real(((phi - phiTildeY) * (phi - phiTildeY)).trace())
-                         - real(((phiX - phiTildeXY2) * (phiX - phiTildeXY2))
-                                    .trace())));
+                lat->cells[pos]->getTxx() + plaquetteEnergy
+                + gradientPrefactor * (gradX0 + gradX1 - gradY0 - gradY1));
 
             lat->cells[pos]->setTyy(
-                lat->cells[pos]->getTyy()
-                + 2. / pow(g, 2.)
-                      * (static_cast<double>(Nc) - (Uplaq.trace()).real())
-                + 0.5 / (it * dtau) / (it * dtau)
-                      * (-real(((phi - phiTildeX) * (phi - phiTildeX)).trace())
-                         - real(((phiY - phiTildeXY1) * (phiY - phiTildeXY1))
-                                    .trace())
-                         + real(((phi - phiTildeY) * (phi - phiTildeY)).trace())
-                         + real(((phiX - phiTildeXY2) * (phiX - phiTildeXY2))
-                                    .trace())));
+                lat->cells[pos]->getTyy() + plaquetteEnergy
+                + gradientPrefactor * (-gradX0 - gradX1 + gradY0 + gradY1));
 
             lat->cells[pos]->setTetaeta(
                 lat->cells[pos]->getTetaeta()
-                + 1. / (it * dtau) / (it * dtau)
-                      * (-2. / pow(g, 2.) * (Nc - (Uplaq.trace()).real())
-                         + 0.5 / (it * dtau) / (it * dtau)
-                               * (+real(((phi - phiTildeX) * (phi - phiTildeX))
-                                            .trace())
-                                  + real(((phiY - phiTildeXY1)
-                                          * (phiY - phiTildeXY1))
-                                             .trace())
-                                  + real(((phi - phiTildeY) * (phi - phiTildeY))
-                                             .trace())
-                                  + real(((phiX - phiTildeXY2)
-                                          * (phiX - phiTildeXY2))
-                                             .trace()))));
+                + invTau2
+                      * (-plaquetteEnergy
+                         + gradientPrefactor
+                               * (gradX0 + gradX1 + gradY0 + gradY1)));
         }
     }
 
@@ -1384,6 +1372,16 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             // note that the minus sign of the first terms in T^\taux and
             // T^\tauy comes from the direction of the plaquettes - I am using
             // +F^{yx} instead of -F^{xy} if you like.
+            const complex<double> ttauxPiTrace =
+                su3::traceABCD(pi, Ux, phiX, UDx)
+                - su3::traceABCD(pi, UDxmX, phimX, UxmX)
+                + su3::traceABCD(piY, UxpY, phiXY, UDxpY)
+                - su3::traceABCD(piY, UDxmXpY, phimXpY, UxmXpY)
+                + su3::traceABCD(piX, UxpX, phi2X, UDxpX)
+                - su3::traceABCD(piX, UDx, phi, Ux)
+                + su3::traceABCD(piXY, UxpXpY, phi2XY, UDxpXpY)
+                - su3::traceABCD(piXY, UDxpY, phiY, UxpY);
+
             lat->cells[pos]->setTtaux(
                 +2. / (it * dtau) / 8.
                     * (E2
@@ -1413,17 +1411,17 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                                       / static_cast<double>(Nc) * one))
                           .trace()
                           .imag()
-                - 2. / 8. / (it * dtau)
-                      * (pi * (Ux * phiX * UDx - UDxmX * phimX * UxmX)
-                         + piY
-                               * (UxpY * phiXY * UDxpY
-                                  - UDxmXpY * phimXpY * UxmXpY)
-                         + piX * (UxpX * phi2X * UDxpX - UDx * phi * Ux)
-                         + piXY
-                               * (UxpXpY * phi2XY * UDxpXpY
-                                  - UDxpY * phiY * UxpY))
-                            .trace()
-                            .real());
+                - 2. / 8. / (it * dtau) * ttauxPiTrace.real());
+
+            const complex<double> ttauyPiTrace =
+                su3::traceABCD(pi, Uy, phiY, UDy)
+                - su3::traceABCD(pi, UDymY, phimY, UymY)
+                + su3::traceABCD(piX, UypX, phiXY, UDypX)
+                - su3::traceABCD(piX, UDypXmY, phipXmY, UypXmY)
+                + su3::traceABCD(piY, UypY, phi2Y, UDypY)
+                - su3::traceABCD(piY, UDy, phi, Uy)
+                + su3::traceABCD(piXY, UypXpY, phiX2Y, UDypXpY)
+                - su3::traceABCD(piXY, UDypX, phiX, UypX);
 
             lat->cells[pos]->setTtauy(
                 +2. / (it * dtau) / 8.
@@ -1454,26 +1452,18 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                                       / static_cast<double>(Nc) * one))
                           .trace()
                           .imag()
-                - 2. / 8. / (it * dtau)
-                      * (pi * (Uy * phiY * UDy - UDymY * phimY * UymY)
-                         + piX
-                               * (UypX * phiXY * UDypX
-                                  - UDypXmY * phipXmY * UypXmY)
-                         + piY * (UypY * phi2Y * UDypY - UDy * phi * Uy)
-                         + piXY
-                               * (UypXpY * phiX2Y * UDypXpY
-                                  - UDypX * phiX * UypX))
-                            .trace()
-                            .real());
+                - 2. / 8. / (it * dtau) * ttauyPiTrace.real());
 
+            const complex<double> ttauetaTrace =
+                su3::traceABCD(E1, Ux, phiX, UDx) - su3::traceAB(E1, phi)
+                + su3::traceABCD(E1p, UxpY, phiXY, UDxpY)
+                - su3::traceAB(E1p, phiY)
+                + su3::traceABCD(E2, Uy, phiY, UDy) - su3::traceAB(E2, phi)
+                + su3::traceABCD(E2p, UypX, phiXY, UDypX)
+                - su3::traceAB(E2p, phiX);
             lat->cells[pos]->setTtaueta(
                 g / (it * dtau) / (it * dtau) / (it * dtau)
-                * (E1 * (Ux * phiX * UDx - phi)
-                   + E1p * (UxpY * phiXY * UDxpY - phiY)
-                   + E2 * (Uy * phiY * UDy - phi)
-                   + E2p * (UypX * phiXY * UDypX - phiX))
-                      .trace()
-                      .real());
+                * ttauetaTrace.real());
 
             // T^xy
             lat->cells[pos]->setTxy(
@@ -1491,13 +1481,13 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                       .trace()
                       .real());
 
+            const complex<double> txetaElectricTrace =
+                su3::traceAB(E1, pi) + su3::traceABCD(E1, Ux, piX, UDx)
+                + su3::traceAB(E1p, piY)
+                + su3::traceABCD(E1p, UxpY, piXY, UDxpY);
             lat->cells[pos]->setTxeta(
                 -2. / (it * dtau) / (it * dtau)
-                * (1. / 4. * g
-                       * (E1 * (pi + Ux * piX * UDx)
-                          + E1p * (piY + UxpY * piXY * UDxpY))
-                             .trace()
-                             .real()
+                * (1. / 4. * g * txetaElectricTrace.real()
                    + 1. / 8. / g
                          * ((Ux * UypX * UDxpY * UDy - Uy * UxpY * UDypX * UDx
                              - (Ux * UypX * UDxpY * UDy
@@ -1526,13 +1516,13 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                                .trace()
                                .imag()));
 
+            const complex<double> tyetaElectricTrace =
+                su3::traceAB(E2, pi) + su3::traceABCD(E2, Uy, piY, UDy)
+                + su3::traceAB(E2p, piX)
+                + su3::traceABCD(E2p, UypX, piXY, UDypX);
             lat->cells[pos]->setTyeta(
                 -2. / (it * dtau) / (it * dtau)
-                * (1. / 4. * g
-                       * (E2 * (pi + Uy * piY * UDy)
-                          + E2p * (piX + UypX * piXY * UDypX))
-                             .trace()
-                             .real()
+                * (1. / 4. * g * tyetaElectricTrace.real()
                    + 1. / 8. / g
                          * ((Uy * UxpY * UDypX * UDx - Ux * UypX * UDxpY * UDy
                              - (Uy * UxpY * UDypX * UDx

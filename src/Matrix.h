@@ -107,7 +107,7 @@ class Matrix {
     std::vector<complex<double>> expmCoeff(std::vector<double> &Q, int n);
 
     complex<double> det();
-    complex<double> trace();
+    complex<double> trace() const;
 
     void reu() {
         if (ndim == 3) {

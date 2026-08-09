@@ -595,19 +595,10 @@ complex<double> Matrix::det() {
     return det;
 }
 
-complex<double> Matrix::trace() {
-    int n = this->getNDim();
-    Matrix Q(n);
-    Q = *this;
-    complex<double> trace;
-
-    if (n == 2) {
-        trace = Q(0, 0) + Q(1, 1);
-    } else if (n == 3) {
-        trace = Q(0, 0) + Q(1, 1) + Q(2, 2);
-    }
-
-    return trace;
+complex<double> Matrix::trace() const {
+    complex<double> tr = 0.;
+    for (int i = 0; i < ndim; ++i) tr += e[i * ndim + i];
+    return tr;
 }
 
 complex<double> Matrix::traceOfProdcutOfMatrix(Matrix &M1, Matrix &M2) const {

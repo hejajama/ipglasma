@@ -84,6 +84,7 @@ writeOutputs 5
 writeEvolution 0
 readInitialWilsonLines 0
 writeInitialWilsonLines 0
+writeEpsilonUHydro 0
 writeOutputsToHDF5 0
 EndOfFile
 BOB

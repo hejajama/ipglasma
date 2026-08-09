@@ -124,6 +124,16 @@ void openTmunuBinaryOutput(
 
 void MyEigen::flowVelocity4D(
     Lattice *lat, Parameters *param, int it, bool finalFlag) {
+    flowVelocity4DImpl(lat, param, it, finalFlag, false);
+}
+
+void MyEigen::writeTmunu4D(Lattice *lat, Parameters *param, int it) {
+    flowVelocity4DImpl(lat, param, it, false, true);
+}
+
+void MyEigen::flowVelocity4DImpl(
+    Lattice *lat, Parameters *param, int it, bool finalFlag,
+    bool tmunuOnly) {
     int N = param->getSize();
     int pos;
     int changeSign;
@@ -145,6 +155,7 @@ void MyEigen::flowVelocity4D(
     double averageeps = 0.;
     count = 0;
 
+    if (!tmunuOnly) {
     // The per-cell flow-velocity solve is now independent across cells (the
     // velocity carryover that previously serialized it has been removed via the
     // rest-frame reset below), so it is parallelized over the lattice. Each
@@ -460,6 +471,7 @@ void MyEigen::flowVelocity4D(
          << endl;
     cout << it * dtau * a
          << " average tau u^eta=" << sqrt(averageueta / averageeps) << endl;
+    }
 
     //  double maxtime = param->getMaxtime(); // maxtime is in fm
     //  int itmax = static_cast<int>(floor(maxtime/(a*dtau)+1e-10));
@@ -530,7 +542,7 @@ void MyEigen::flowVelocity4D(
     // strEtot_name << "Etot-t" << it*dtau*a << "-" << param->getEventId() <<
     // ".dat"; string Etot_name; Etot_name = strEtot_name.str();
 
-    if (param->getWriteOutputs() % 2 == 1) {
+    if (!tmunuOnly && param->getWriteOutputs() % 2 == 1) {
         IPG_PROFILE_SCOPE("output.hydro_text");
         const string outputFilename = streuH_name.str();
         vector<char> outputBuffer(kTextOutputBufferBytes);
@@ -1234,6 +1246,8 @@ void MyEigen::flowVelocity4D(
         }
         closeBufferedTextOutput(foutEps1, outputFilename);
     }
+
+    if (tmunuOnly) return;
 
     if (static_cast<int>((param->getWriteOutputs() % 4) / 2) == 1) {
         double Jaztot = 0.;

@@ -85,6 +85,8 @@ class Parameters {
                        // in IP-Sat for nuclei)
     int writeOutputs;  // decide whether to write (1) or not write (0) large
                        // output files (like hydro input data)
+    int writeEpsilonUHydro;  // run the flow-velocity/hydro-output calculation
+                              // (1) or write only Tmunu at measurement times (0)
     int writeOutputsToHDF5;  // decide whether to write (1) or not write (0)
                              // output files to one hdf5 file
     int writeEvolution;  // decide whether to write (1) or not write (0) time
@@ -452,6 +454,8 @@ class Parameters {
     int getLinearb() { return linearb; }
     void setWriteOutputs(int x) { writeOutputs = x; };
     int getWriteOutputs() { return writeOutputs; }
+    void setWriteEpsilonUHydro(int x) { writeEpsilonUHydro = x; };
+    int getWriteEpsilonUHydro() { return writeEpsilonUHydro; }
     void setWriteOutputsToHDF5(int x) { writeOutputsToHDF5 = x; };
     int getWriteOutputsToHDF5() { return writeOutputsToHDF5; }
     void setWriteEvolution(int x) { writeEvolution = x; };

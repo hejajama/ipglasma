@@ -522,6 +522,13 @@ int readInput(
     param->setDetaOutput(setup->DFind(file_name, "detaOutput"));
     param->setUseFluctuatingx(setup->IFind(file_name, "useFluctuatingx"));
     param->setNc(setup->IFind(file_name, "Nc"));
+    if (param->getNc() != 3) {
+        if (rank == 0) {
+            cerr << "Error: IP-Glasma supports SU(3) only; input Nc must be 3 "
+                 << "(received Nc=" << param->getNc() << "). Exiting." << endl;
+        }
+        exit(1);
+    }
     param->setInverseQsForMaxTime(
         setup->IFind(file_name, "inverseQsForMaxTime"));
     param->setSeed(setup->ULLIFind(file_name, "seed"));
@@ -590,6 +597,8 @@ int readInput(
         setup->DFind(file_name, "xFromThisFactorTimesQs"));
     param->setLinearb(setup->IFind(file_name, "samplebFromLinearDistribution"));
     param->setWriteOutputs(setup->IFind(file_name, "writeOutputs"));
+    param->setWriteEpsilonUHydro(
+        setup->IFind(file_name, "writeEpsilonUHydro"));
     param->setWriteOutputsToHDF5(setup->IFind(file_name, "writeOutputsToHDF5"));
     param->setWriteEvolution(setup->IFind(file_name, "writeEvolution"));
     param->setWriteInitialWilsonLines(
