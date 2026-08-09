@@ -6,6 +6,7 @@
 #include <gsl/gsl_interp.h>
 #include <gsl/gsl_spline.h>
 
+#include <algorithm>
 #include <complex>
 #include <cstdint>
 #include <iomanip>
@@ -748,6 +749,15 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     int it2   = static_cast<int>(0.3/(a*dtau) + 0.0000000001);
     int it3   = static_cast<int>(0.4/(a*dtau) + 0.0000000001);
 
+    // Tmunu is defined at the integer coordinate time tau_n, while the
+    // leapfrog momenta E1, E2, and pi live at tau_{n-1/2}.  Keep reusable
+    // backups so measurements can temporarily center the momenta without
+    // changing the actual evolution trajectory or making it output-dependent.
+    const std::size_t latticeSites = static_cast<std::size_t>(N) * N;
+    std::vector<Matrix> tmunuE1Backup(latticeSites);
+    std::vector<Matrix> tmunuE2Backup(latticeSites);
+    std::vector<Matrix> tmunuPiBackup(latticeSites);
+
     cout << "Starting evolution: num of time steps=" << itmax << "" << endl;
     if ( (param->getWriteOutputs() == 5) ) {
       cout << "Measuring at times " << it0 * a * dtau << ", "  << it1 * a * dtau << ", "
@@ -760,7 +770,26 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 
     // do evolution
     for (int it = 1; it <= itmax; it++) {
-        if (it == itmax) {
+        const bool finalTmunuMeasurement = (it == itmax);
+        const bool intermediateTmunuMeasurement =
+            (param->getWriteOutputs() == 5)
+            && (it == it0 || it == it1 || it == it2 || it == it3);
+        const bool measureTmunu =
+            finalTmunuMeasurement || intermediateTmunuMeasurement;
+
+        if (measureTmunu) {
+            std::copy(lat->U.begin(), lat->U.end(), tmunuE1Backup.begin());
+            std::copy(lat->U2.begin(), lat->U2.end(), tmunuE2Backup.begin());
+            std::copy(lat->Ux2.begin(), lat->Ux2.end(), tmunuPiBackup.begin());
+
+            // Temporarily move E1, E2, and pi from tau_{n-1/2} to tau_n.
+            // Coordinates are not advanced.  The original momenta are restored
+            // after output, so enabling Tmunu measurements cannot change the
+            // subsequent leapfrog trajectory.
+            evolveStepPersistent(lat, param, dtau / 2., it * dtau, false);
+        }
+
+        if (finalTmunuMeasurement) {
             Tmunu(lat, param, it);
             if (param->getWriteOutputs() == 5) {
               // writeEvolvedFields(lat, param, it);
@@ -776,7 +805,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
             }
         }
 
-        if ( (param->getWriteOutputs() == 5) && ( it == it0 || it == it1 || it == it2 || it == it3 )) {
+        if (intermediateTmunuMeasurement) {
             Tmunu(lat, param, it);
             //writeEvolvedFields(lat, param, it);
             // Preserve the historical intermediate-time finalFlag=false path
@@ -787,6 +816,12 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
                 MyEigen myeigen;
                 myeigen.writeTmunu4D(lat, param, it);
             }
+        }
+
+        if (measureTmunu) {
+            std::copy(tmunuE1Backup.begin(), tmunuE1Backup.end(), lat->U.begin());
+            std::copy(tmunuE2Backup.begin(), tmunuE2Backup.end(), lat->U2.begin());
+            std::copy(tmunuPiBackup.begin(), tmunuPiBackup.end(), lat->Ux2.begin());
         }
 
         if (it % 10 == 0) {
