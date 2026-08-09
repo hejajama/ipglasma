@@ -1016,74 +1016,78 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 
     int N = param->getSize();
     int Nc = param->getNc();
-    int pos, posX, posY, posmX, posmY, posXY, posmXpY, pospXmY, pos2X, pos2Y,
-        posX2Y, pos2XY;
     double L = param->getL();
     double a = L / N;  // lattice spacing in fm
     double g = param->getg();
     double dtau = param->getdtau();
     Matrix one(Nc, 1.);
 
-    Matrix Ux(Nc);
-    Matrix Uy(Nc);
-    Matrix UxmX(Nc);
-    Matrix UymY(Nc);
-    Matrix UDx(Nc);
-    Matrix UDy(Nc);
-    Matrix UDxmX(Nc);
-    Matrix UDymY(Nc);
-    Matrix UDxmXpY(Nc);
-    Matrix UDxpXpY(Nc);
-    Matrix UxpX(Nc);
-    Matrix UxpY(Nc);
-    Matrix UDxpY(Nc);
-    Matrix UxpXpY(Nc);
-    Matrix UDypXmY(Nc);
-    Matrix UypY(Nc);
-    Matrix UypX(Nc);
-    Matrix UDypX(Nc);
-    Matrix UypXpY(Nc);
-    Matrix UDypXpY(Nc);
-    Matrix UymX(Nc);
-    Matrix UxmXpY(Nc);
-    Matrix UxmY(Nc);
-    Matrix UDxmY(Nc);
-    Matrix UypXmY(Nc);
-    Matrix UDyp2X(Nc);
-    Matrix Uyp2X(Nc);
-    Matrix UDxpX(Nc);
-    Matrix Uxp2Y(Nc);
-    Matrix UDxp2Y(Nc);
-    Matrix UDypY(Nc);
-    Matrix UDymX(Nc);
-    Matrix Uplaq(Nc), UplaqD(Nc), Uplaq1(Nc), Uplaq1D(Nc), Uplaq2(Nc);
-    Matrix E1(Nc);
-    Matrix E2(Nc);
-    Matrix E1p(Nc);
-    Matrix E2p(Nc);
-    Matrix pi(Nc);
-    Matrix piX(Nc);
-    Matrix piY(Nc);
-    Matrix piXY(Nc);
-    Matrix phi(Nc);
-    Matrix phiX(Nc);
-    Matrix phiY(Nc);
-    Matrix phiXY(Nc);
-    Matrix phimX(Nc);
-    Matrix phimY(Nc);
-    Matrix phi2XY(Nc);
-    Matrix phiX2Y(Nc);
-    Matrix phi2X(Nc);
-    Matrix phi2Y(Nc);
-    Matrix phimXpY(Nc);
-    Matrix phipXmY(Nc);
-    Matrix phiTildeX(Nc);
-    Matrix phiTildeY(Nc);
-    Matrix phiTildeXY1(Nc);
-    Matrix phiTildeXY2(Nc);
+#pragma omp parallel
+    {
+        int pos, posX, posY, posmX, posmY, posXY, posmXpY, pospXmY, pos2X,
+            pos2Y, posX2Y, pos2XY;
+        Matrix Ux(Nc);
+        Matrix Uy(Nc);
+        Matrix UxmX(Nc);
+        Matrix UymY(Nc);
+        Matrix UDx(Nc);
+        Matrix UDy(Nc);
+        Matrix UDxmX(Nc);
+        Matrix UDymY(Nc);
+        Matrix UDxmXpY(Nc);
+        Matrix UDxpXpY(Nc);
+        Matrix UxpX(Nc);
+        Matrix UxpY(Nc);
+        Matrix UDxpY(Nc);
+        Matrix UxpXpY(Nc);
+        Matrix UDypXmY(Nc);
+        Matrix UypY(Nc);
+        Matrix UypX(Nc);
+        Matrix UDypX(Nc);
+        Matrix UypXpY(Nc);
+        Matrix UDypXpY(Nc);
+        Matrix UymX(Nc);
+        Matrix UxmXpY(Nc);
+        Matrix UxmY(Nc);
+        Matrix UDxmY(Nc);
+        Matrix UypXmY(Nc);
+        Matrix UDyp2X(Nc);
+        Matrix Uyp2X(Nc);
+        Matrix UDxpX(Nc);
+        Matrix Uxp2Y(Nc);
+        Matrix UDxp2Y(Nc);
+        Matrix UDypY(Nc);
+        Matrix UDymX(Nc);
+        Matrix Uplaq(Nc), UplaqD(Nc), Uplaq1(Nc), Uplaq1D(Nc), Uplaq2(Nc);
+        Matrix E1(Nc);
+        Matrix E2(Nc);
+        Matrix E1p(Nc);
+        Matrix E2p(Nc);
+        Matrix pi(Nc);
+        Matrix piX(Nc);
+        Matrix piY(Nc);
+        Matrix piXY(Nc);
+        Matrix phi(Nc);
+        Matrix phiX(Nc);
+        Matrix phiY(Nc);
+        Matrix phiXY(Nc);
+        Matrix phimX(Nc);
+        Matrix phimY(Nc);
+        Matrix phi2XY(Nc);
+        Matrix phiX2Y(Nc);
+        Matrix phi2X(Nc);
+        Matrix phi2Y(Nc);
+        Matrix phimXpY(Nc);
+        Matrix phipXmY(Nc);
+        Matrix phiTildeX(Nc);
+        Matrix phiTildeY(Nc);
+        Matrix phiTildeXY1(Nc);
+        Matrix phiTildeXY2(Nc);
+
 
     // set plaquette in every cell
-    for (int i = 0; i < N; i++) {
+#pragma omp for
+        for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
 
@@ -1104,7 +1108,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 
     // T^\tau\tau, Txx, Tyy, Tetaeta:
     // electric part:
-    for (int i = 0; i < N; i++) {
+#pragma omp for
+        for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
             posX = lat->pospX[pos];
@@ -1154,7 +1159,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         }
     }
 
-    for (int i = 0; i < N; i++) {
+#pragma omp for
+        for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
 
@@ -1231,7 +1237,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         }
     }
 
-    for (pos = 0; pos < N * N; pos++) {
+#pragma omp for
+        for (pos = 0; pos < N * N; pos++) {
         // clean up numerical noise outside the interaction region
         // if (lat->cells[pos]->getg2mu2A() < 1e-12
         //    || lat->cells[pos]->getg2mu2B() < 1e-12) {
@@ -1253,7 +1260,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
     }
 
     // T^\tau x, T^\tau y
-    for (int i = 0; i < N; i++) {
+#pragma omp for reduction(+ : averageTtautau, averageTtaueta, averageTxx)
+        for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
             posX = lat->pospX[pos];
@@ -1569,6 +1577,7 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             averageTxx += lat->cells[pos]->getTxx() * lat->cells[pos]->getTxx();
         }
     }
+    }  // omp parallel
     averageTtautau /= double(N);
     averageTtaueta /= double(N);
     averageTxx /= double(N);
