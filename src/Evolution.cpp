@@ -91,31 +91,64 @@ struct EvolveEScratch {
           Uy(Nc),
           temp1(Nc),
           temp2(Nc),
-          temp3(Nc),
           En(Nc),
           phi(Nc),
           phiN(Nc),
           U12(Nc),
           U1m2(Nc),
-          U12Dag(Nc),
-          U2m1(Nc),
-          one(Nc, 1.) {}
+          U2m1(Nc) {}
 
     Matrix Ux;
     Matrix Uy;
     Matrix temp1;
     Matrix temp2;
-    Matrix temp3;
     Matrix En;
     Matrix phi;
     Matrix phiN;
     Matrix U12;
     Matrix U1m2;
-    Matrix U12Dag;
     Matrix U2m1;
-    Matrix one;
-    complex<double> trace;
 };
+
+inline void addEForceSU3(
+    Matrix &En, const Matrix &a, const Matrix &b, double bSign,
+    const Matrix &phiN, const Matrix &phi,
+    const complex<double> coeffPlaq, const complex<double> coeffComm) {
+    complex<double> *E = En.data();
+    const complex<double> *A = a.data();
+    const complex<double> *B = b.data();
+    const su3::Matrix3 comm = su3::commutator(phiN, phi);
+
+    // The plaquette force is the traceless anti-Hermitian part of
+    // M = a + bSign*b.  Form it directly instead of materializing M, M^dagger,
+    // an identity-matrix scale, and the associated Matrix temporaries.
+    const complex<double> m00 = A[0] + bSign * B[0];
+    const complex<double> m11 = A[4] + bSign * B[4];
+    const complex<double> m22 = A[8] + bSign * B[8];
+    const complex<double> traceThird =
+        ((m00 - std::conj(m00)) + (m11 - std::conj(m11))
+         + (m22 - std::conj(m22)))
+        / 3.0;
+
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            const int idx = 3 * row + col;
+            const int tidx = 3 * col + row;
+            const complex<double> mij = A[idx] + bSign * B[idx];
+            const complex<double> mji = A[tidx] + bSign * B[tidx];
+            complex<double> plaq = mij - std::conj(mji);
+            if (row == col) plaq -= traceThird;
+            E[idx] += coeffPlaq * plaq + coeffComm * comm.e[idx];
+        }
+    }
+
+    // E is constrained to be traceless.  The old code subtracts
+    // trace(E)/3 times the identity Matrix; only the diagonal entries change.
+    const complex<double> eTraceThird = (E[0] + E[4] + E[8]) / 3.0;
+    E[0] -= eTraceThird;
+    E[4] -= eTraceThird;
+    E[8] -= eTraceThird;
+}
 
 void evolveUTeam(
     Lattice *lat, int N, double g, double dtau, double tau,
@@ -210,6 +243,7 @@ void evolvePiTeam(
 void evolveETeam(
     Lattice *lat, int N, int Nc, double g, double dtau, double tau,
     EvolveEScratch &scratch) {
+    (void)Nc;
     const complex<double> coeffPlaq =
         complex<double>(0., 1.) * tau * dtau / (2. * g * g);
     const complex<double> coeffComm =
@@ -249,57 +283,25 @@ void evolveETeam(
             * (scratch.Ux.prodAconjB(
                 scratch.temp1, lat->Ux[lat->posmX[pos]]));
 
-        scratch.U12Dag = scratch.U12;
-        scratch.U12Dag.conjg();
-
-        scratch.temp3 = scratch.U1m2;
-        scratch.temp3.conjg();
-
-        scratch.temp1 = scratch.U12;
-        scratch.temp1 += scratch.U1m2;
-        scratch.temp1 -= scratch.U12Dag;
-        scratch.temp1 -= scratch.temp3;
-
-        scratch.trace = scratch.temp1.trace();
-        scratch.temp1 -=
-            scratch.trace / static_cast<double>(Nc) * scratch.one;
-
-        scratch.temp2 =
-            scratch.phiN * scratch.phi - scratch.phi * scratch.phiN;
-
-        scratch.En += coeffPlaq * scratch.temp1 + coeffComm * scratch.temp2;
-
-        scratch.trace = scratch.En.trace();
-        scratch.En -=
-            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
-        lat->U[pos] = (scratch.En);
-
-        scratch.temp3 = scratch.U2m1;
-        scratch.temp3.conjg();
-
-        scratch.temp1 = scratch.U12Dag;
-        scratch.temp1 += scratch.U2m1;
-        scratch.temp1 -= scratch.U12;
-        scratch.temp1 -= scratch.temp3;
-        scratch.trace = scratch.temp1.trace();
-        scratch.temp1 -=
-            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
+        // U12 + U1m2 - U12^dagger - U1m2^dagger is the
+        // anti-Hermitian part of U12 + U1m2.
+        addEForceSU3(
+            scratch.En, scratch.U12, scratch.U1m2, 1.0,
+            scratch.phiN, scratch.phi, coeffPlaq, coeffComm);
+        lat->U[pos] = scratch.En;
 
         scratch.phiN = lat->Uy2[lat->pospY[pos]];
         scratch.phiN =
             scratch.Uy
             * scratch.Uy.prodABconj(scratch.phiN, scratch.Uy);
 
-        scratch.temp2 =
-            scratch.phiN * scratch.phi - scratch.phi * scratch.phiN;
-
         scratch.En = lat->U2[pos];
-        scratch.En += coeffPlaq * scratch.temp1 + coeffComm * scratch.temp2;
-
-        scratch.trace = scratch.En.trace();
-        scratch.En -=
-            (scratch.trace / static_cast<double>(Nc)) * scratch.one;
-        lat->U2[pos] = (scratch.En);
+        // U12^dagger + U2m1 - U12 - U2m1^dagger is the
+        // anti-Hermitian part of U2m1 - U12.
+        addEForceSU3(
+            scratch.En, scratch.U2m1, scratch.U12, -1.0,
+            scratch.phiN, scratch.phi, coeffPlaq, coeffComm);
+        lat->U2[pos] = scratch.En;
     }
 }
 
