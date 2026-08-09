@@ -1170,6 +1170,15 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
 
+            // Tmunu uses centered/forward/backward stencils that require a
+            // genuine one-cell neighborhood.  Treat the outermost lattice
+            // cells as a nonphysical guard region instead of constructing
+            // clamped, gauge-noncovariant boundary plaquettes.
+            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                lat->Uy1[pos] = one;
+                continue;
+            }
+
             posX = lat->pospX[pos];
             posY = lat->pospY[pos];
 
@@ -1181,7 +1190,6 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             Uplaq = lat->Ux[pos]
                     * (lat->Uy[posX] * (UDx * UDy));
             lat->Uy1[pos] = (Uplaq);
-            if (i == N - 1) lat->Uy1[pos] = (one);
         }
     }
 
@@ -1191,6 +1199,13 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
+            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                lat->cells[pos]->setTtautau(0.);
+                lat->cells[pos]->setTxx(0.);
+                lat->cells[pos]->setTyy(0.);
+                lat->cells[pos]->setTetaeta(0.);
+                continue;
+            }
             posX = lat->pospX[pos];
             posY = lat->pospY[pos];
 
@@ -1242,6 +1257,9 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
+            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                continue;
+            }
 
             posX = lat->pospX[pos];
             posY = lat->pospY[pos];
@@ -1318,6 +1336,16 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 
 #pragma omp for
         for (pos = 0; pos < N * N; pos++) {
+        const int i = pos / N;
+        const int j = pos - i * N;
+        if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+            lat->cells[pos]->setEpsilon(0.);
+            lat->cells[pos]->setTtautau(0.);
+            lat->cells[pos]->setTxx(0.);
+            lat->cells[pos]->setTyy(0.);
+            lat->cells[pos]->setTetaeta(0.);
+            continue;
+        }
         // clean up numerical noise outside the interaction region
         // if (lat->cells[pos]->getg2mu2A() < 1e-12
         //    || lat->cells[pos]->getg2mu2B() < 1e-12) {
@@ -1343,6 +1371,15 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
+            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                lat->cells[pos]->setTtaux(0.);
+                lat->cells[pos]->setTtauy(0.);
+                lat->cells[pos]->setTtaueta(0.);
+                lat->cells[pos]->setTxy(0.);
+                lat->cells[pos]->setTxeta(0.);
+                lat->cells[pos]->setTyeta(0.);
+                continue;
+            }
             posX = lat->pospX[pos];
             posY = lat->pospY[pos];
             posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
