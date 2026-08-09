@@ -280,11 +280,8 @@ Matrix &Matrix::imag() {
 
 // matrix exponential e^iQ of traceless Hermitian matrices, using coefficients
 // Q^a of generators t^a as argument. Dimension is Nc
-vector<complex<double>> Matrix::expmCoeff(std::vector<double> &Q, int Nc) {
-    requireSU3Dimension(Nc);
+void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
     const int Nc2m1 = 8;
-    vector<complex<double>> result;
-    result.reserve(9);
     double sqrt3 = sqrt(3.);
     complex<double> f0, f1, f2, iu, u0, ua[8];
     double c0 = 0., c0max, u, w, xi0, den, thetaOverThree;
@@ -381,10 +378,9 @@ vector<complex<double>> Matrix::expmCoeff(std::vector<double> &Q, int Nc) {
               - 0.5 * Q[6] * Q[6])
              / sqrt3;
 
-    result.push_back(u0);
-
+    result[0] = u0;
     for (int i = 0; i < 8; i++) {
-        result.push_back(ua[i] * 0.5 * f2);
+        result[i + 1] = ua[i] * 0.5 * f2;
     }
 
     // Check potential NaNs
@@ -396,7 +392,14 @@ vector<complex<double>> Matrix::expmCoeff(std::vector<double> &Q, int Nc) {
             result[i] = 0;
         }
     }
-    return result;
+
+}
+
+vector<complex<double>> Matrix::expmCoeff(std::vector<double> &Q, int Nc) {
+    requireSU3Dimension(Nc);
+    complex<double> coeff[9];
+    expmCoeff(Q.data(), coeff);
+    return vector<complex<double>>(coeff, coeff + 9);
 }
 
 // matrix exponential using Pade approximant

@@ -1896,28 +1896,70 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     messager.info("Setting Wilson lines ...");
     const int N = param->getSize();
     const int Ny = param->getNy();
+    const int sites = N * N;
     const int nn[2] = {N, N};
     const double L = param->getL();
     const double a = L / N;  // lattice spacing in fm
     const double m = param->getm() * a / hbarc;
+    const double g = param->getg();
+    const double invNy = 1. / static_cast<double>(Ny);
     double UVdamp = param->getUVdamp();  // GeV^-1
     UVdamp = UVdamp / a * hbarc;
-    complex<double> **rhoACoeff;
-    rhoACoeff = new complex<double> *[Nc2m1_];
-    for (int i = 0; i < Nc2m1_; i++) {
-        rhoACoeff[i] = new complex<double>[N * N];
+
+    // The lattice Poisson/UV kernel depends only on transverse momentum and
+    // run parameters.  The historical implementation recomputed the same
+    // sin/sqrt/exp expressions for every longitudinal sheet of both nuclei.
+    std::vector<double> momentumKernel(static_cast<std::size_t>(sites));
+#pragma omp parallel for
+    for (int pos = 0; pos < sites; ++pos) {
+        const int i = pos / N;
+        const int j = pos - i * N;
+        const double kx =
+            2. * M_PI
+            * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
+        const double ky =
+            2. * M_PI
+            * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
+        const double sx = sin(kx / 2.);
+        const double sy = sin(ky / 2.);
+        const double kt2 = 4. * (sx * sx + sy * sy);
+
+        if (m == 0.) {
+            momentumKernel[static_cast<std::size_t>(pos)] =
+                (kt2 != 0.) ? 1. / kt2 : 0.;
+        } else {
+            momentumKernel[static_cast<std::size_t>(pos)] =
+                (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
+        }
     }
 
-    // loop over longitudinal direction
+    complex<double> **rhoACoeff = new complex<double> *[Nc2m1_];
+    for (int i = 0; i < Nc2m1_; i++) {
+        rhoACoeff[i] = new complex<double>[sites];
+    }
+
+    auto applyMomentumKernel = [&]() {
+#pragma omp parallel for
+        for (int n = 0; n < Nc2m1_; ++n) {
+            complex<double> *rho = rhoACoeff[n];
+            for (int pos = 0; pos < sites; ++pos) {
+                rho[pos] *= momentumKernel[static_cast<std::size_t>(pos)];
+            }
+        }
+    };
+
+    // loop over longitudinal direction for nucleus A
     for (int k = 0; k < Ny; k++) {
-        double g2muA;
-        for (int pos = 0; pos < N * N; pos++) {
-            for (int n = 0; n < Nc2m1_; n++) {
-                g2muA =
-                    param->getg()
-                    * sqrt(
-                        lat->cells[pos]->getg2mu2A() / static_cast<double>(Ny));
-                rhoACoeff[n][pos] = g2muA * random->Gauss();
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random");
+            for (int pos = 0; pos < sites; pos++) {
+                // This factor is color independent.  Compute its square root
+                // once per site rather than once for each of eight colors.
+                const double g2muA =
+                    g * sqrt(lat->cells[pos]->getg2mu2A() * invNy);
+                for (int n = 0; n < Nc2m1_; n++) {
+                    rhoACoeff[n][pos] = g2muA * random->Gauss();
+                }
             }
         }
 
@@ -1925,77 +1967,48 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
             fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
         }
 
-        // compute A^+
-#pragma omp parallel for
-        for (int i = 0; i < N; i++) {
-            for (int j = 0; j < N; j++) {
-                double kt2, kx, ky;
-                int localpos = i * N + j;
-                kx = 2. * M_PI
-                     * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
-                ky = 2. * M_PI
-                     * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
-                kt2 = 4.
-                      * (sin(kx / 2.) * sin(kx / 2.)
-                         + sin(ky / 2.) * sin(ky / 2.));  // lattice momentum
-                if (m == 0) {
-                    if (kt2 != 0) {
-                        for (int n = 0; n < Nc2m1_; n++) {
-                            rhoACoeff[n][localpos] =
-                                rhoACoeff[n][localpos] * (1. / (kt2));
-                        }
-                    } else {
-                        for (int n = 0; n < Nc2m1_; n++) {
-                            rhoACoeff[n][localpos] = 0.;
-                        }
-                    }
-                } else {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] *=
-                            (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
-                    }
-                }
-            }
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_poisson");
+            applyMomentumKernel();
         }
 
-        // Fourier transform back A^+
         for (int n = 0; n < Nc2m1_; n++) {
             fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
         }
-        // compute U
 
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_exponent");
 #pragma omp parallel
-        {
-            std::vector<double> in(Nc2m1_, 0.);
-            Matrix temp(Nc_, 1.);
-            Matrix tempNew(Nc_, 0.);
+            {
+                std::vector<double> in(Nc2m1_, 0.);
+                Matrix temp(Nc_, 1.);
+                Matrix tempNew(Nc_, 0.);
 
 #pragma omp for
-            for (int pos = 0; pos < N * N; pos++) {
-                for (int aa = 0; aa < Nc2m1_; aa++) {
-                    // expmCoeff will calculate exp(i in[a]t[a]),
-                    // so just multiply by -1 (not -i)
-                    in[aa] = -(rhoACoeff[aa][pos]).real();
+                for (int pos = 0; pos < sites; pos++) {
+                    for (int aa = 0; aa < Nc2m1_; aa++) {
+                        // expmCoeff calculates exp(i in[a] t[a]), so multiply
+                        // by -1 (not -i).
+                        in[aa] = -(rhoACoeff[aa][pos]).real();
+                    }
+                    tempNew = getUfromExponent(in);
+                    temp = tempNew * lat->U[pos];
+                    lat->U[pos] = temp;
                 }
-                tempNew = getUfromExponent(in);
-                temp = tempNew * lat->U[pos];
-                // set U
-                lat->U[pos] = (temp);
             }
         }
+    }
 
-    }  // Ny loop
-
-    // loop over longitudinal direction
+    // loop over longitudinal direction for nucleus B
     for (int k = 0; k < Ny; k++) {
-        double g2muB;
-        for (int pos = 0; pos < N * N; pos++) {
-            for (int n = 0; n < Nc2m1_; n++) {
-                g2muB =
-                    param->getg()
-                    * sqrt(
-                        lat->cells[pos]->getg2mu2B() / static_cast<double>(Ny));
-                rhoACoeff[n][pos] = g2muB * random->Gauss();
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random");
+            for (int pos = 0; pos < sites; pos++) {
+                const double g2muB =
+                    g * sqrt(lat->cells[pos]->getg2mu2B() * invNy);
+                for (int n = 0; n < Nc2m1_; n++) {
+                    rhoACoeff[n][pos] = g2muB * random->Gauss();
+                }
             }
         }
 
@@ -2003,67 +2016,38 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
             fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
         }
 
-        // compute A^+
-#pragma omp parallel for
-        for (int i = 0; i < N; i++) {
-            for (int j = 0; j < N; j++) {
-                double kt2, kx, ky;
-                int localpos = i * N + j;
-                kx = 2. * M_PI
-                     * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
-                ky = 2. * M_PI
-                     * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
-                kt2 = 4.
-                      * (sin(kx / 2.) * sin(kx / 2.)
-                         + sin(ky / 2.) * sin(ky / 2.));  // lattice momentum
-                if (m == 0) {
-                    if (kt2 != 0) {
-                        for (int n = 0; n < Nc2m1_; n++) {
-                            rhoACoeff[n][localpos] =
-                                rhoACoeff[n][localpos] * (1. / (kt2));
-                        }
-                    } else {
-                        for (int n = 0; n < Nc2m1_; n++) {
-                            rhoACoeff[n][localpos] = 0.;
-                        }
-                    }
-                } else {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] *=
-                            (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
-                    }
-                }
-            }
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_poisson");
+            applyMomentumKernel();
         }
 
-        // Fourier transform back A^+
         for (int n = 0; n < Nc2m1_; n++) {
             fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
         }
-        // compute U
 
-        // #pragma omp parallel
+        // The old nucleus-B block had its omp parallel directive commented
+        // out, leaving this expensive exponential/multiply pass effectively
+        // serial.  Match the nucleus-A implementation.
         {
-            std::vector<double> in(Nc2m1_, 0.);
-            Matrix temp(Nc_, 1.);
-            Matrix tempNew(Nc_, 0.);
+            IPG_PROFILE_SCOPE("initialization.wilson_exponent");
+#pragma omp parallel
+            {
+                std::vector<double> in(Nc2m1_, 0.);
+                Matrix temp(Nc_, 1.);
+                Matrix tempNew(Nc_, 0.);
 
 #pragma omp for
-            for (int pos = 0; pos < N * N; pos++) {
-                for (int aa = 0; aa < Nc2m1_; aa++) {
-                    // expmCoeff will calculate exp(i in[a]t[a]), so
-                    // just multiply by -1 (not -i)
-                    in[aa] = -(rhoACoeff[aa][pos]).real();
+                for (int pos = 0; pos < sites; pos++) {
+                    for (int aa = 0; aa < Nc2m1_; aa++) {
+                        in[aa] = -(rhoACoeff[aa][pos]).real();
+                    }
+                    tempNew = getUfromExponent(in);
+                    temp = tempNew * lat->U2[pos];
+                    lat->U2[pos] = temp;
                 }
-                tempNew = getUfromExponent(in);
-                temp = tempNew * lat->U2[pos];
-
-                // set U
-                lat->U2[pos] = (temp);
             }
         }
-
-    }  // Ny loop
+    }
 
     // --------
     for (int ic = 0; ic < Nc2m1_; ic++) {
@@ -3740,19 +3724,30 @@ bool Init::findUInForwardLightconeChun(
 }
 
 Matrix Init::getUfromExponent(std::vector<double> &in) {
-    Matrix tempM(Nc_, 0.);
+    Matrix tempM(Nc_, Matrix::noInit);
+    complex<double> U[9];
 
-    // expmCoeff wil calculate exp(i in[a]t[a])
-    auto U = tempM.expmCoeff(in, Nc_);
+    // expmCoeff calculates the coefficients of exp(i in[a] t[a]).  Build
+    // the 3x3 matrix directly from the fixed SU(3) generators instead of
+    // allocating a coefficient vector and materializing eight scaled Matrix
+    // temporaries plus the chained sums.
+    tempM.expmCoeff(in.data(), U);
     if (std::abs(U[0].real()) < 1e-15) {
         tempM = one_;
     } else {
-        tempM =
-            (U[0] * one_ + U[1] * group_ptr_->getT(0)
-             + U[2] * group_ptr_->getT(1) + U[3] * group_ptr_->getT(2)
-             + U[4] * group_ptr_->getT(3) + U[5] * group_ptr_->getT(4)
-             + U[6] * group_ptr_->getT(5) + U[7] * group_ptr_->getT(6)
-             + U[8] * group_ptr_->getT(7));
+        const complex<double> I(0., 1.);
+        const double invSqrt3 = 1. / std::sqrt(3.);
+
+        tempM.set(0, 0, U[0] + 0.5 * U[3] + 0.5 * invSqrt3 * U[8]);
+        tempM.set(1, 1, U[0] - 0.5 * U[3] + 0.5 * invSqrt3 * U[8]);
+        tempM.set(2, 2, U[0] - invSqrt3 * U[8]);
+
+        tempM.set(0, 1, 0.5 * (U[1] - I * U[2]));
+        tempM.set(1, 0, 0.5 * (U[1] + I * U[2]));
+        tempM.set(0, 2, 0.5 * (U[4] - I * U[5]));
+        tempM.set(2, 0, 0.5 * (U[4] + I * U[5]));
+        tempM.set(1, 2, 0.5 * (U[6] - I * U[7]));
+        tempM.set(2, 1, 0.5 * (U[6] + I * U[7]));
     }
-    return (tempM);
+    return tempM;
 }

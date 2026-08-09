@@ -73,6 +73,8 @@ class Matrix {
 
     // Matrix exponential of traceless hermitian matrix using coefficients of
     // the eight SU(3) fundamental generators as input.
+    // Allocation-free SU(3) exponential coefficients for hot paths.
+    void expmCoeff(const double *Q, complex<double> out[9]) const;
     std::vector<complex<double>> expmCoeff(std::vector<double> &Q, int n);
 
     complex<double> det();
