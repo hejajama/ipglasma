@@ -306,11 +306,13 @@ void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
     }
     c1 *= 0.25;
 
-    c0max = std::max(1e-15, 2. * pow(c1 / 3., 1.5));
+    const double c1Over3 = c1 / 3.;
+    const double sqrtC1Over3 = sqrt(c1Over3);
+    c0max = std::max(1e-15, 2. * c1Over3 * sqrtC1Over3);
 
     thetaOverThree = acos(c0 / c0max) / 3.;
 
-    u = sqrt(c1 / 3.) * cos(thetaOverThree);
+    u = sqrtC1Over3 * cos(thetaOverThree);
     w = sqrt(c1) * sin(thetaOverThree);
 
     xi0 = sin(w) / w;
@@ -320,8 +322,12 @@ void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
     iu = complex<double>(0, 1) * u;
 
     double cosw = cos(w);
-    complex<double> exp2iu = exp(2. * iu);
-    complex<double> expmiu = exp(-iu);
+    // iu is purely imaginary.  Construct the two phase factors directly
+    // instead of routing them through the general complex exponential.
+    const double sinu = sin(u);
+    const double cosu = cos(u);
+    complex<double> exp2iu(cos(2. * u), sin(2. * u));
+    complex<double> expmiu(cosu, -sinu);
 
     f0 = (u * u - w * w) * exp2iu
          + expmiu * (8. * u * u * cosw + 2. * iu * xi0 * (3. * u * u + w * w));
@@ -354,33 +360,37 @@ void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
     //     exit(1);
     // }
 
-    f1 /= (0.5 * f2);  // will multiply everything by 0.5 f2 again later
+    // The historical code divided f1 by (0.5*f2), added the real
+    // quadratic SU(3) coefficients, and then multiplied the whole result by
+    // (0.5*f2) again.  Algebraically cancel that complex division:
+    //   (f1/(0.5*f2) * Q + q2) * (0.5*f2)
+    //       = f1 * Q + q2 * (0.5*f2).
+    // Besides being cheaper, this avoids an unnecessary division when f2 is
+    // very small.
+    const complex<double> halfF2 = 0.5 * f2;
 
-    for (int i = 0; i < 8; i++) {
-        ua[i] = f1 * Q[i];
-    }
-
-    ua[0] += (Q[3] * Q[5] + Q[4] * Q[6] + 2. / sqrt3 * Q[0] * Q[7]);
-    ua[1] += (2. * Q[1] * Q[7] / sqrt3 - Q[3] * Q[6] + Q[4] * Q[5]);
-    ua[2] +=
-        (2. * Q[2] * Q[7] / sqrt3 + 0.5 * Q[3] * Q[3] + 0.5 * Q[4] * Q[4]
-         - 0.5 * Q[5] * Q[5] - 0.5 * Q[6] * Q[6]);
-    ua[3] +=
-        (-1. / sqrt3 * Q[3] * Q[7] + Q[0] * Q[5] - Q[1] * Q[6] + Q[2] * Q[3]);
-    ua[4] +=
-        (-1. / sqrt3 * Q[4] * Q[7] + Q[0] * Q[6] + Q[1] * Q[5] + Q[2] * Q[4]);
-    ua[5] +=
-        (-1. / sqrt3 * Q[5] * Q[7] + Q[0] * Q[3] + Q[1] * Q[4] - Q[2] * Q[5]);
-    ua[6] +=
-        (-1. / sqrt3 * Q[6] * Q[7] + Q[0] * Q[4] - Q[1] * Q[3] - Q[2] * Q[6]);
-    ua[7] += (Q[0] * Q[0] + Q[1] * Q[1] + Q[2] * Q[2] - Q[7] * Q[7]
-              - 0.5 * Q[3] * Q[3] - 0.5 * Q[4] * Q[4] - 0.5 * Q[5] * Q[5]
-              - 0.5 * Q[6] * Q[6])
-             / sqrt3;
+    ua[0] = Q[3] * Q[5] + Q[4] * Q[6] + 2. / sqrt3 * Q[0] * Q[7];
+    ua[1] = 2. * Q[1] * Q[7] / sqrt3 - Q[3] * Q[6] + Q[4] * Q[5];
+    ua[2] =
+        2. * Q[2] * Q[7] / sqrt3 + 0.5 * Q[3] * Q[3] + 0.5 * Q[4] * Q[4]
+        - 0.5 * Q[5] * Q[5] - 0.5 * Q[6] * Q[6];
+    ua[3] =
+        -1. / sqrt3 * Q[3] * Q[7] + Q[0] * Q[5] - Q[1] * Q[6] + Q[2] * Q[3];
+    ua[4] =
+        -1. / sqrt3 * Q[4] * Q[7] + Q[0] * Q[6] + Q[1] * Q[5] + Q[2] * Q[4];
+    ua[5] =
+        -1. / sqrt3 * Q[5] * Q[7] + Q[0] * Q[3] + Q[1] * Q[4] - Q[2] * Q[5];
+    ua[6] =
+        -1. / sqrt3 * Q[6] * Q[7] + Q[0] * Q[4] - Q[1] * Q[3] - Q[2] * Q[6];
+    ua[7] =
+        (Q[0] * Q[0] + Q[1] * Q[1] + Q[2] * Q[2] - Q[7] * Q[7]
+         - 0.5 * Q[3] * Q[3] - 0.5 * Q[4] * Q[4] - 0.5 * Q[5] * Q[5]
+         - 0.5 * Q[6] * Q[6])
+        / sqrt3;
 
     result[0] = u0;
     for (int i = 0; i < 8; i++) {
-        result[i + 1] = ua[i] * 0.5 * f2;
+        result[i + 1] = f1 * Q[i] + halfF2 * ua[i];
     }
 
     // Check potential NaNs
