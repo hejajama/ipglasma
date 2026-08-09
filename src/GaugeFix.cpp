@@ -19,6 +19,68 @@ namespace {
 // chi = q[a] t[a], with t[a] = lambda[a]/2.  Recover the eight real
 // coefficients directly from the 3x3 matrix and evaluate exp(i chi) with
 // the analytic SU(3) exponential used by the Wilson-line hot path.
+
+// Project a general 3x3 matrix D onto the Hermitian traceless SU(3) algebra
+// element used by the historical generator loop:
+//
+//     g = sum_a Im Tr(D t_a) t_a
+//       = 1/2 [ (D - D^dagger)/(2 i) ]_traceless .
+//
+// Return Tr(g^dagger g)/3 at the same time so the gauge-fixing residual does
+// not need a separate matrix conjugation and multiplication.
+inline double projectGaugeDivergenceSU3(
+    const Matrix &ux, const Matrix &uy, const Matrix &uxMx, const Matrix &uyMy,
+    Matrix &g) {
+    const complex<double> *x = ux.data();
+    const complex<double> *y = uy.data();
+    const complex<double> *xm = uxMx.data();
+    const complex<double> *ym = uyMy.data();
+    complex<double> *out = g.data();
+
+    const complex<double> d00 = x[0] - xm[0] + y[0] - ym[0];
+    const complex<double> d11 = x[4] - xm[4] + y[4] - ym[4];
+    const complex<double> d22 = x[8] - xm[8] + y[8] - ym[8];
+
+    const double traceShift =
+        (d00.imag() + d11.imag() + d22.imag()) / 6.0;
+    const double g00 = 0.5 * d00.imag() - traceShift;
+    const double g11 = 0.5 * d11.imag() - traceShift;
+    const double g22 = 0.5 * d22.imag() - traceShift;
+
+    out[0] = complex<double>(g00, 0.0);
+    out[4] = complex<double>(g11, 0.0);
+    out[8] = complex<double>(g22, 0.0);
+
+    const complex<double> d01 = x[1] - xm[1] + y[1] - ym[1];
+    const complex<double> d10 = x[3] - xm[3] + y[3] - ym[3];
+    const complex<double> d02 = x[2] - xm[2] + y[2] - ym[2];
+    const complex<double> d20 = x[6] - xm[6] + y[6] - ym[6];
+    const complex<double> d12 = x[5] - xm[5] + y[5] - ym[5];
+    const complex<double> d21 = x[7] - xm[7] + y[7] - ym[7];
+
+    const complex<double> g01(
+        0.25 * (d01.imag() + d10.imag()),
+        0.25 * (d10.real() - d01.real()));
+    const complex<double> g02(
+        0.25 * (d02.imag() + d20.imag()),
+        0.25 * (d20.real() - d02.real()));
+    const complex<double> g12(
+        0.25 * (d12.imag() + d21.imag()),
+        0.25 * (d21.real() - d12.real()));
+
+    out[1] = g01;
+    out[3] = std::conj(g01);
+    out[2] = g02;
+    out[6] = std::conj(g02);
+    out[5] = g12;
+    out[7] = std::conj(g12);
+
+    const double frobeniusSquared =
+        g00 * g00 + g11 * g11 + g22 * g22
+        + 2.0 * (std::norm(g01) + std::norm(g02) + std::norm(g12));
+    return frobeniusSquared / 3.0;
+}
+
 inline void expGaugeRotationSU3(const Matrix &chi, Matrix &out) {
     double q[8];
     q[0] = 2.0 * chi.getRe(1);
@@ -60,13 +122,12 @@ void GaugeFix::FFTChi(
     nn[0] = N;
     nn[1] = N;
     int Nc = param->getNc();
-    int Nc2m1 = Nc * Nc - 1;
+    (void)group;
 
     Matrix one(Nc, 1.);
 
     const int max_gfiter = steps;
 
-    Matrix zero(Nc, 0.);
     double gresidual_prev = 10000.;
     double gresidual = 0.;
     std::vector<double> residualSite(static_cast<std::size_t>(N) * N);
@@ -89,9 +150,6 @@ void GaugeFix::FFTChi(
             IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.divergence");
 #pragma omp parallel
             {
-                Matrix localg(Nc), localgdag(Nc), localDivA(Nc);
-                Matrix localUx(Nc), localUy(Nc), localUxMx(Nc), localUyMy(Nc);
-
 #pragma omp for collapse(2)
                 for (int i = 0; i < N; i++) {
                     for (int j = 0; j < N; j++) {
@@ -103,26 +161,11 @@ void GaugeFix::FFTChi(
                         const int localposmY =
                             (j == 0) ? i * N + N - 1 : i * N + j - 1;
 
-                        localUx = lat->Ux[localpos];
-                        localUy = lat->Uy[localpos];
-                        localUxMx = lat->Ux[localposmX];
-                        localUyMy = lat->Uy[localposmY];
-
-                        localDivA = (localUx - localUxMx + localUy - localUyMy);
-
-                        localg = zero;
-                        for (int ig = 0; ig < Nc2m1; ig++) {
-                            localg =
-                                localg
-                                + ((localDivA)*group->getT(ig)).trace().imag()
-                                      * group->getT(ig);
-                        }
-
-                        *chi[localpos] = localgdag = localg;
-                        localgdag.conjg();
                         residualSite[static_cast<std::size_t>(localpos)] =
-                            ((localgdag * localg).trace()).real()
-                            / static_cast<double>(Nc);
+                            projectGaugeDivergenceSU3(
+                                lat->Ux[localpos], lat->Uy[localpos],
+                                lat->Ux[localposmX], lat->Uy[localposmY],
+                                *chi[localpos]);
                     }
                 }
             }
