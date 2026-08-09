@@ -429,8 +429,7 @@ void MyEigen::flowVelocity4D(
                         // xhigh = -L/2.+a*xposUp;
                         // yhigh = -L/2.+a*yposUp;
 
-                        fracx = (x - xlow) / ha;
-                        fracy = (y - ylow) / ha;
+                        fracx = (x - xlow) / a;
 
                         pos1 = xpos * N + ypos;
                         pos2 = xposUp * N + ypos;
@@ -439,7 +438,7 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------epsilon---------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx)
                                      * abs(lat->cells[pos1]->getEpsilon())
@@ -447,7 +446,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx)
                                      * abs(lat->cells[pos3]->getEpsilon())
@@ -455,11 +454,13 @@ void MyEigen::flowVelocity4D(
                         else
                             x2 = 0.;
 
+                        fracy = (y - ylow) / a;
+
                         resultE = (1. - fracy) * x1 + fracy * x2;
 
                         // -----------------------------g2mu2A----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2A())
@@ -467,7 +468,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2A())
@@ -479,7 +480,7 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------g2mu2B----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2B())
@@ -487,7 +488,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2B())
@@ -499,14 +500,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------utau------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getutau())
                                  + fracx * (lat->cells[pos2]->getutau());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getutau())
                                  + fracx * (lat->cells[pos4]->getutau());
@@ -517,14 +518,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------ux--------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getux())
                                  + fracx * (lat->cells[pos2]->getux());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getux())
                                  + fracx * (lat->cells[pos4]->getux());
@@ -535,14 +536,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------uy--------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getuy())
                                  + fracx * (lat->cells[pos2]->getuy());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getuy())
                                  + fracx * (lat->cells[pos4]->getuy());
@@ -553,14 +554,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------ueta------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getueta())
                                  + fracx * (lat->cells[pos2]->getueta());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getueta())
                                  + fracx * (lat->cells[pos4]->getueta());
@@ -571,14 +572,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pitautau--------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpitautau())
                                  + fracx * (lat->cells[pos2]->getpitautau());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpitautau())
                                  + fracx * (lat->cells[pos4]->getpitautau());
@@ -589,14 +590,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pitaux----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpitaux())
                                  + fracx * (lat->cells[pos2]->getpitaux());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpitaux())
                                  + fracx * (lat->cells[pos4]->getpitaux());
@@ -607,14 +608,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pitauy----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpitauy())
                                  + fracx * (lat->cells[pos2]->getpitauy());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpitauy())
                                  + fracx * (lat->cells[pos4]->getpitauy());
@@ -625,14 +626,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pitaueta--------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpitaueta())
                                  + fracx * (lat->cells[pos2]->getpitaueta());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpitaueta())
                                  + fracx * (lat->cells[pos4]->getpitaueta());
@@ -643,14 +644,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pixy----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpixy())
                                  + fracx * (lat->cells[pos2]->getpixy());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpixy())
                                  + fracx * (lat->cells[pos4]->getpixy());
@@ -661,14 +662,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pixeta----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpixeta())
                                  + fracx * (lat->cells[pos2]->getpixeta());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpixeta())
                                  + fracx * (lat->cells[pos4]->getpixeta());
@@ -679,14 +680,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------piyeta----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpiyeta())
                                  + fracx * (lat->cells[pos2]->getpiyeta());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpiyeta())
                                  + fracx * (lat->cells[pos4]->getpiyeta());
@@ -697,14 +698,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pixx------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpixx())
                                  + fracx * (lat->cells[pos2]->getpixx());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpixx())
                                  + fracx * (lat->cells[pos4]->getpixx());
@@ -715,14 +716,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------piyy------------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpiyy())
                                  + fracx * (lat->cells[pos2]->getpiyy());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpiyy())
                                  + fracx * (lat->cells[pos4]->getpiyy());
@@ -733,14 +734,14 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------pietaeta--------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 = (1 - fracx) * (lat->cells[pos1]->getpietaeta())
                                  + fracx * (lat->cells[pos2]->getpietaeta());
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 = (1 - fracx) * (lat->cells[pos3]->getpietaeta())
                                  + fracx * (lat->cells[pos4]->getpietaeta());
@@ -840,18 +841,18 @@ void MyEigen::flowVelocity4D(
                     pos3 = xpos * N + yposUp;
                     pos4 = xposUp * N + yposUp;
 
-                    fracx = (x - xlow) / ha;
-                    fracy = (y - ylow) / ha;
+                    fracx = (x - xlow) / a;
+                    fracy = (y - ylow) / a;
 
                     // ---------------------T^tautau----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTtautau())
                              + fracx * (lat->cells[pos2]->getTtautau()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTtautau())
                              + fracx * (lat->cells[pos4]->getTtautau()));
@@ -861,14 +862,14 @@ void MyEigen::flowVelocity4D(
                     resultT00 = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^taux----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTtaux())
                              + fracx * (lat->cells[pos2]->getTtaux()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTtaux())
                              + fracx * (lat->cells[pos4]->getTtaux()));
@@ -878,14 +879,14 @@ void MyEigen::flowVelocity4D(
                     resultT0x = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^tauy----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTtauy())
                              + fracx * (lat->cells[pos2]->getTtauy()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTtauy())
                              + fracx * (lat->cells[pos4]->getTtauy()));
@@ -895,14 +896,14 @@ void MyEigen::flowVelocity4D(
                     resultT0y = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^taueta----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTtaueta())
                              + fracx * (lat->cells[pos2]->getTtaueta()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTtaueta())
                              + fracx * (lat->cells[pos4]->getTtaueta()));
@@ -912,14 +913,14 @@ void MyEigen::flowVelocity4D(
                     resultT0eta = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^xx----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTxx())
                              + fracx * (lat->cells[pos2]->getTxx()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTxx())
                              + fracx * (lat->cells[pos4]->getTxx()));
@@ -929,14 +930,14 @@ void MyEigen::flowVelocity4D(
                     resultTxx = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^xy----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTxy())
                              + fracx * (lat->cells[pos2]->getTxy()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTxy())
                              + fracx * (lat->cells[pos4]->getTxy()));
@@ -946,14 +947,14 @@ void MyEigen::flowVelocity4D(
                     resultTxy = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^xeta----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTxeta())
                              + fracx * (lat->cells[pos2]->getTxeta()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTxeta())
                              + fracx * (lat->cells[pos4]->getTxeta()));
@@ -963,14 +964,14 @@ void MyEigen::flowVelocity4D(
                     resultTxeta = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^yy----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTyy())
                              + fracx * (lat->cells[pos2]->getTyy()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTyy())
                              + fracx * (lat->cells[pos4]->getTyy()));
@@ -980,14 +981,14 @@ void MyEigen::flowVelocity4D(
                     resultTyy = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^yeta----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTyeta())
                              + fracx * (lat->cells[pos2]->getTyeta()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTyeta())
                              + fracx * (lat->cells[pos4]->getTyeta()));
@@ -997,14 +998,14 @@ void MyEigen::flowVelocity4D(
                     resultTyeta = (1. - fracy) * x1 + fracy * x2;
 
                     // ---------------------T^etaeta----------------------- //
-                    if (pos1 > 0 && pos1 < N * N && pos2 > 0 && pos2 < N * N) {
+                    if (pos1 >= 0 && pos1 < N * N && pos2 >= 0 && pos2 < N * N) {
                         x1 =
                             ((1 - fracx) * (lat->cells[pos1]->getTetaeta())
                              + fracx * (lat->cells[pos2]->getTetaeta()));
                     } else {
                         x1 = 0.;
                     }
-                    if (pos3 > 0 && pos3 < N * N && pos4 > 0 && pos4 < N * N) {
+                    if (pos3 >= 0 && pos3 < N * N && pos4 >= 0 && pos4 < N * N) {
                         x2 =
                             ((1 - fracx) * (lat->cells[pos3]->getTetaeta())
                              + fracx * (lat->cells[pos4]->getTetaeta()));
@@ -1076,7 +1077,7 @@ void MyEigen::flowVelocity4D(
                         xlow = -L / 2. + a * xpos;
                         ylow = -L / 2. + a * ypos;
 
-                        fracx = (x - xlow) / ha;
+                        fracx = (x - xlow) / a;
 
                         pos1 = xpos * N + ypos;
                         pos2 = xposUp * N + ypos;
@@ -1085,7 +1086,7 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------g2mu2A----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2A())
@@ -1093,7 +1094,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2A())
@@ -1101,13 +1102,13 @@ void MyEigen::flowVelocity4D(
                         else
                             x2 = 0.;
 
-                        fracy = (y - ylow) / ha;
+                        fracy = (y - ylow) / a;
 
                         g2mu2A = (1. - fracy) * x1 + fracy * x2;
 
                         // -----------------------------g2mu2B----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2B())
@@ -1115,7 +1116,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2B())
@@ -1182,7 +1183,7 @@ void MyEigen::flowVelocity4D(
                         xlow = -L / 2. + a * xpos;
                         ylow = -L / 2. + a * ypos;
 
-                        fracx = (x - xlow) / ha;
+                        fracx = (x - xlow) / a;
 
                         pos1 = xpos * N + ypos;
                         pos2 = xposUp * N + ypos;
@@ -1191,7 +1192,7 @@ void MyEigen::flowVelocity4D(
 
                         // -----------------------------g2mu2A----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2A())
@@ -1199,7 +1200,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2A())
@@ -1207,13 +1208,13 @@ void MyEigen::flowVelocity4D(
                         else
                             x2 = 0.;
 
-                        fracy = (y - ylow) / ha;
+                        fracy = (y - ylow) / a;
 
                         g2mu2A = (1. - fracy) * x1 + fracy * x2;
 
                         // -----------------------------g2mu2B----------------------------------
                         // //
-                        if (pos1 > 0 && pos1 < (N) * (N) && pos2 > 0
+                        if (pos1 >= 0 && pos1 < (N) * (N) && pos2 >= 0
                             && pos2 < (N) * (N))
                             x1 =
                                 (1 - fracx) * abs(lat->cells[pos1]->getg2mu2B())
@@ -1221,7 +1222,7 @@ void MyEigen::flowVelocity4D(
                         else
                             x1 = 0.;
 
-                        if (pos3 > 0 && pos3 < N * N && pos4 > 0
+                        if (pos3 >= 0 && pos3 < N * N && pos4 >= 0
                             && pos4 < N * N)
                             x2 =
                                 (1 - fracx) * abs(lat->cells[pos3]->getg2mu2B())
