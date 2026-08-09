@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -978,6 +979,7 @@ void MyEigen::flowVelocity4DImpl(
         } else {
             outputBuffer.resize(kTextOutputBufferBytes);
             openBufferedTextOutput(foutEps1, outputBuffer, outputFilename);
+            foutEps1 << std::setprecision(17);
             foutEps1 << "# dummy " << 1 << " etamax= " << heta << " xmax= " << hx
                      << " ymax= " << hy << " deta= " << deta << " dx= " << ha
                      << " dy= " << ha << '\n';

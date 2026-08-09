@@ -125,7 +125,7 @@ void evolveUTeam(
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
         scratch.E1 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
-                     * lat->cells[pos]->getE1();
+                     * lat->U[pos];
 
         scratch.temp2 = scratch.one + 1. / (double)n * scratch.E1;
         for (int in = 0; in < n - 1; in++) {
@@ -137,7 +137,7 @@ void evolveUTeam(
         scratch.E1 = scratch.temp2;
 
         scratch.E2 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
-                     * lat->cells[pos]->getE2();
+                     * lat->U2[pos];
 
         scratch.temp2 = scratch.one + 1. / (double)n * scratch.E2;
         for (int in = 0; in < n - 1; in++) {
@@ -148,8 +148,8 @@ void evolveUTeam(
 
         scratch.E2 = scratch.temp2;
 
-        lat->cells[pos]->setUx(scratch.E1 * lat->cells[pos]->getUx());
-        lat->cells[pos]->setUy(scratch.E2 * lat->cells[pos]->getUy());
+        lat->Ux[pos] = (scratch.E1 * lat->Ux[pos]);
+        lat->Uy[pos] = (scratch.E2 * lat->Uy[pos]);
     }
 }
 
@@ -158,12 +158,12 @@ void evolvePhiTeam(
     EvolvePhiScratch &scratch) {
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
-        scratch.phi = lat->cells[pos]->getphi();
-        scratch.pi = lat->cells[pos]->getpi();
+        scratch.phi = lat->Uy2[pos];
+        scratch.pi = lat->Ux2[pos];
 
         scratch.phi = scratch.phi + (tau + dtau / 2.) * dtau * scratch.pi;
 
-        lat->cells[pos]->setphi(scratch.phi);
+        lat->Uy2[pos] = (scratch.phi);
     }
 }
 
@@ -172,30 +172,30 @@ void evolvePiTeam(
     EvolvePiScratch &scratch) {
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
-        scratch.Ux = lat->cells[pos]->getUx();
-        scratch.Uy = lat->cells[pos]->getUy();
-        scratch.pi = lat->cells[pos]->getpi();
-        scratch.phi = lat->cells[pos]->getphi();
+        scratch.Ux = lat->Ux[pos];
+        scratch.Uy = lat->Uy[pos];
+        scratch.pi = lat->Ux2[pos];
+        scratch.phi = lat->Uy2[pos];
 
         scratch.phiX =
             scratch.Ux
             * scratch.Ux.prodABconj(
-                lat->cells[lat->pospX[pos]]->getphi(), scratch.Ux);
+                lat->Uy2[lat->pospX[pos]], scratch.Ux);
         scratch.phiY =
             scratch.Uy
             * scratch.Uy.prodABconj(
-                lat->cells[lat->pospY[pos]]->getphi(), scratch.Uy);
+                lat->Uy2[lat->pospY[pos]], scratch.Uy);
 
-        scratch.UxXm1 = lat->cells[lat->posmX[pos]]->getUx();
-        scratch.UyYm1 = lat->cells[lat->posmY[pos]]->getUy();
+        scratch.UxXm1 = lat->Ux[lat->posmX[pos]];
+        scratch.UyYm1 = lat->Uy[lat->posmY[pos]];
 
         scratch.phimX =
             scratch.Ux.prodAconjB(
-                scratch.UxXm1, lat->cells[lat->posmX[pos]]->getphi())
+                scratch.UxXm1, lat->Uy2[lat->posmX[pos]])
             * scratch.UxXm1;
         scratch.phimY =
             scratch.Ux.prodAconjB(
-                scratch.UyYm1, lat->cells[lat->posmY[pos]]->getphi())
+                scratch.UyYm1, lat->Uy2[lat->posmY[pos]])
             * scratch.UyYm1;
 
         scratch.bracket = scratch.phiX + scratch.phimX + scratch.phiY
@@ -203,7 +203,7 @@ void evolvePiTeam(
 
         scratch.pi += dtau / (tau)*scratch.bracket;
 
-        lat->cells[pos]->setpi(scratch.pi);
+        lat->Ux2[pos] = (scratch.pi);
     }
 }
 
@@ -220,34 +220,34 @@ void evolveETeam(
         const int posmXpY = lat->posmXpY[pos];
         const int pospXmY = lat->pospXmY[pos];
 
-        scratch.En = lat->cells[pos]->getE1();
-        scratch.phi = lat->cells[pos]->getphi();
-        scratch.phiN = lat->cells[lat->pospX[pos]]->getphi();
-        scratch.Ux = lat->cells[pos]->getUx();
+        scratch.En = lat->U[pos];
+        scratch.phi = lat->Uy2[pos];
+        scratch.phiN = lat->Uy2[lat->pospX[pos]];
+        scratch.Ux = lat->Ux[pos];
         scratch.phiN =
             scratch.Ux
             * scratch.Ux.prodABconj(scratch.phiN, scratch.Ux);
 
-        scratch.Uy = lat->cells[pos]->getUy();
-        scratch.temp1 = lat->cells[lat->pospY[pos]]->getUx();
+        scratch.Uy = lat->Uy[pos];
+        scratch.temp1 = lat->Ux[lat->pospY[pos]];
         scratch.temp1.conjg();
         scratch.U12 =
-            (scratch.Ux * lat->cells[lat->pospX[pos]]->getUy())
+            (scratch.Ux * lat->Uy[lat->pospX[pos]])
             * (scratch.Ux.prodABconj(scratch.temp1, scratch.Uy));
 
-        scratch.temp1 = lat->cells[lat->posmY[pos]]->getUx();
-        scratch.temp2 = lat->cells[pospXmY]->getUy();
+        scratch.temp1 = lat->Ux[lat->posmY[pos]];
+        scratch.temp2 = lat->Uy[pospXmY];
         scratch.U1m2 =
             (scratch.Ux.prodABconj(scratch.Ux, scratch.temp2))
             * (scratch.Ux.prodAconjB(
-                scratch.temp1, lat->cells[lat->posmY[pos]]->getUy()));
+                scratch.temp1, lat->Uy[lat->posmY[pos]]));
 
-        scratch.temp1 = lat->cells[lat->posmX[pos]]->getUy();
-        scratch.temp2 = lat->cells[posmXpY]->getUx();
+        scratch.temp1 = lat->Uy[lat->posmX[pos]];
+        scratch.temp2 = lat->Ux[posmXpY];
         scratch.U2m1 =
             (scratch.Ux.prodABconj(scratch.Uy, scratch.temp2))
             * (scratch.Ux.prodAconjB(
-                scratch.temp1, lat->cells[lat->posmX[pos]]->getUx()));
+                scratch.temp1, lat->Ux[lat->posmX[pos]]));
 
         scratch.U12Dag = scratch.U12;
         scratch.U12Dag.conjg();
@@ -272,7 +272,7 @@ void evolveETeam(
         scratch.trace = scratch.En.trace();
         scratch.En -=
             (scratch.trace / static_cast<double>(Nc)) * scratch.one;
-        lat->cells[pos]->setE1(scratch.En);
+        lat->U[pos] = (scratch.En);
 
         scratch.temp3 = scratch.U2m1;
         scratch.temp3.conjg();
@@ -285,7 +285,7 @@ void evolveETeam(
         scratch.temp1 -=
             (scratch.trace / static_cast<double>(Nc)) * scratch.one;
 
-        scratch.phiN = lat->cells[lat->pospY[pos]]->getphi();
+        scratch.phiN = lat->Uy2[lat->pospY[pos]];
         scratch.phiN =
             scratch.Uy
             * scratch.Uy.prodABconj(scratch.phiN, scratch.Uy);
@@ -293,13 +293,13 @@ void evolveETeam(
         scratch.temp2 =
             scratch.phiN * scratch.phi - scratch.phi * scratch.phiN;
 
-        scratch.En = lat->cells[pos]->getE2();
+        scratch.En = lat->U2[pos];
         scratch.En += coeffPlaq * scratch.temp1 + coeffComm * scratch.temp2;
 
         scratch.trace = scratch.En.trace();
         scratch.En -=
             (scratch.trace / static_cast<double>(Nc)) * scratch.one;
-        lat->cells[pos]->setE2(scratch.En);
+        lat->U2[pos] = (scratch.En);
     }
 }
 
@@ -443,36 +443,36 @@ void Evolution::checkGaussLaw(Lattice *lat, Parameters *param) {
 
     for (int pos = 0; pos < N * N; pos++) {
         // retrieve current Ux and Uy
-        Ux = lat->cells[pos]->getUx();
-        Uy = lat->cells[pos]->getUy();
+        Ux = lat->Ux[pos];
+        Uy = lat->Uy[pos];
         UxDag = Ux;
         UxDag.conjg();
         UyDag = Uy;
         UyDag.conjg();
 
-        UxXm1 = lat->cells[lat->posmX[pos]]->getUx();
-        UxYm1 = lat->cells[lat->posmY[pos]]->getUx();
+        UxXm1 = lat->Ux[lat->posmX[pos]];
+        UxYm1 = lat->Ux[lat->posmY[pos]];
         UxXm1Dag = UxXm1;
         UxXm1Dag.conjg();
         UxYm1Dag = UxYm1;
         UxYm1Dag.conjg();
 
-        UyXm1 = lat->cells[lat->posmX[pos]]->getUy();
-        UyYm1 = lat->cells[lat->posmY[pos]]->getUy();
+        UyXm1 = lat->Uy[lat->posmX[pos]];
+        UyYm1 = lat->Uy[lat->posmY[pos]];
         UyXm1Dag = UyXm1;
         UyXm1Dag.conjg();
         UyYm1Dag = UyYm1;
         UyYm1Dag.conjg();
 
         // retrieve current E1 and E2 (that's the one defined at tau-dtau/2)
-        E1 = lat->cells[pos]->getE1();
-        E2 = lat->cells[pos]->getE2();
-        E1mX = lat->cells[lat->posmX[pos]]->getE1();
-        E2mY = lat->cells[lat->posmY[pos]]->getE2();
+        E1 = lat->U[pos];
+        E2 = lat->U2[pos];
+        E1mX = lat->U[lat->posmX[pos]];
+        E2mY = lat->U2[lat->posmY[pos]];
         // retrieve current phi (at time tau) at this x_T
-        phi = lat->cells[pos]->getphi();
+        phi = lat->Uy2[pos];
         // retrieve current pi
-        pi = lat->cells[pos]->getpi();
+        pi = lat->Ux2[pos];
 
         Gauss = UxXm1Dag * E1mX * UxXm1 - E1 + UyYm1Dag * E2mY * UyYm1 - E2
                 - complex<double>(0., 1.) * (phi * pi - pi * phi);
@@ -506,17 +506,17 @@ void Evolution::writeEvolvedFields(
   auto matrixAt = [lat](const int field, const int pos) -> const Matrix & {
     switch (field) {
       case 0:
-        return lat->cells[pos]->getphi();
+        return lat->Uy2[pos];
       case 1:
-        return lat->cells[pos]->getpi();
+        return lat->Ux2[pos];
       case 2:
-        return lat->cells[pos]->getE1();
+        return lat->U[pos];
       case 3:
-        return lat->cells[pos]->getE2();
+        return lat->U2[pos];
       case 4:
-        return lat->cells[pos]->getUx();
+        return lat->Ux[pos];
       case 5:
-        return lat->cells[pos]->getUy();
+        return lat->Uy[pos];
       default:
         throw std::runtime_error("invalid evolved-field index");
     }
@@ -690,7 +690,6 @@ void Evolution::writeGluonMultiplicityTarget(
 
 void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     IPG_PROFILE_SCOPE("evolution.total");
-    int Nc = param->getNc();
     int pos;
     int N = param->getSize();
     double g = param->getg();
@@ -1091,15 +1090,15 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             posX = lat->pospX[pos];
             posY = lat->pospY[pos];
 
-            UDx = lat->cells[posY]->getUx();
-            UDy = lat->cells[pos]->getUy();
+            UDx = lat->Ux[posY];
+            UDy = lat->Uy[pos];
             UDx.conjg();
             UDy.conjg();
 
-            Uplaq = lat->cells[pos]->getUx()
-                    * (lat->cells[posX]->getUy() * (UDx * UDy));
-            lat->cells[pos]->setUplaq(Uplaq);
-            if (i == N - 1) lat->cells[pos]->setUplaq(one);
+            Uplaq = lat->Ux[pos]
+                    * (lat->Uy[posX] * (UDx * UDy));
+            lat->Uy1[pos] = (Uplaq);
+            if (i == N - 1) lat->Uy1[pos] = (one);
         }
     }
 
@@ -1113,15 +1112,15 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 
             posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
 
-            E1 = lat->cells[pos]->getE1();
-            E2 = lat->cells[pos]->getE2();
-            E1p = lat->cells[posY]->getE1();
-            E2p = lat->cells[posX]->getE2();  // shift y value in x direction
+            E1 = lat->U[pos];
+            E2 = lat->U2[pos];
+            E1p = lat->U[posY];
+            E2p = lat->U2[posX];  // shift y value in x direction
 
-            pi = lat->cells[pos]->getpi();
-            piX = lat->cells[posX]->getpi();
-            piY = lat->cells[posY]->getpi();
-            piXY = lat->cells[posXY]->getpi();
+            pi = lat->Ux2[pos];
+            piX = lat->Ux2[posX];
+            piY = lat->Ux2[posY];
+            piXY = lat->Ux2[posXY];
 
             // These observables only need traces of matrix squares.  Computing
             // the complete 3x3 products here used to create 32 Matrix
@@ -1164,15 +1163,15 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
 
             posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
 
-            Uplaq = lat->cells[pos]->getUplaq();
+            Uplaq = lat->Uy1[pos];
 
-            phi = lat->cells[pos]->getphi();
-            phiX = lat->cells[posX]->getphi();
-            phiY = lat->cells[posY]->getphi();
-            phiXY = lat->cells[posXY]->getphi();
+            phi = lat->Uy2[pos];
+            phiX = lat->Uy2[posX];
+            phiY = lat->Uy2[posY];
+            phiXY = lat->Uy2[posXY];
 
-            Ux = lat->cells[pos]->getUx();
-            Uy = lat->cells[pos]->getUy();
+            Ux = lat->Ux[pos];
+            Uy = lat->Uy[pos];
             UDx = Ux;
             UDx.conjg();
             UDy = Uy;
@@ -1182,8 +1181,8 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             phiTildeY = Uy * phiY * UDy;
 
             // same at one up in the other direction
-            Ux = lat->cells[posY]->getUx();
-            Uy = lat->cells[posX]->getUy();
+            Ux = lat->Ux[posY];
+            Uy = lat->Uy[posX];
             UDx = Ux;
             UDx.conjg();
             UDy = Uy;
@@ -1273,101 +1272,101 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             pos2XY = std::min(N - 1, i + 2) * N + std::min(N - 1, j + 1);
             posX2Y = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 2);
 
-            E1 = lat->cells[pos]->getE1();
-            E2 = lat->cells[pos]->getE2();
-            E1p = lat->cells[posY]->getE1();  // shift x value in y direction
-            E2p = lat->cells[posX]->getE2();  // shift y value in x direction
+            E1 = lat->U[pos];
+            E2 = lat->U2[pos];
+            E1p = lat->U[posY];  // shift x value in y direction
+            E2p = lat->U2[posX];  // shift y value in x direction
 
-            Uplaq = lat->cells[pos]->getUplaq();
-            Uplaq1 = lat->cells[posmX]->getUplaq();
-            Uplaq2 = lat->cells[posmY]->getUplaq();
+            Uplaq = lat->Uy1[pos];
+            Uplaq1 = lat->Uy1[posmX];
+            Uplaq2 = lat->Uy1[posmY];
             UplaqD = Uplaq;
             UplaqD.conjg();
             Uplaq1D = Uplaq1;
             Uplaq1D.conjg();
 
-            pi = lat->cells[pos]->getpi();
-            piX = lat->cells[posX]->getpi();
-            piY = lat->cells[posY]->getpi();
-            piXY = lat->cells[posXY]->getpi();
+            pi = lat->Ux2[pos];
+            piX = lat->Ux2[posX];
+            piY = lat->Ux2[posY];
+            piXY = lat->Ux2[posXY];
 
-            phi = lat->cells[pos]->getphi();
-            phimX = lat->cells[posmX]->getphi();
-            phiX = lat->cells[posX]->getphi();
-            phimY = lat->cells[posmY]->getphi();
-            phiY = lat->cells[posY]->getphi();
-            phiXY = lat->cells[posXY]->getphi();
-            phimXpY = lat->cells[posmXpY]->getphi();
-            phipXmY = lat->cells[pospXmY]->getphi();
-            phi2X = lat->cells[pos2X]->getphi();
-            phi2XY = lat->cells[pos2XY]->getphi();
-            phi2Y = lat->cells[pos2Y]->getphi();
-            phiX2Y = lat->cells[posX2Y]->getphi();
+            phi = lat->Uy2[pos];
+            phimX = lat->Uy2[posmX];
+            phiX = lat->Uy2[posX];
+            phimY = lat->Uy2[posmY];
+            phiY = lat->Uy2[posY];
+            phiXY = lat->Uy2[posXY];
+            phimXpY = lat->Uy2[posmXpY];
+            phipXmY = lat->Uy2[pospXmY];
+            phi2X = lat->Uy2[pos2X];
+            phi2XY = lat->Uy2[pos2XY];
+            phi2Y = lat->Uy2[pos2Y];
+            phiX2Y = lat->Uy2[posX2Y];
 
-            Ux = lat->cells[pos]->getUx();
+            Ux = lat->Ux[pos];
             UDx = Ux;
             UDx.conjg();
 
-            UxmX = lat->cells[posmX]->getUx();
-            UDxmX = lat->cells[posmX]->getUx();
+            UxmX = lat->Ux[posmX];
+            UDxmX = lat->Ux[posmX];
             UDxmX.conjg();
-            UxmXpY = lat->cells[posmXpY]->getUx();
-            UDxmXpY = lat->cells[posmXpY]->getUx();
+            UxmXpY = lat->Ux[posmXpY];
+            UDxmXpY = lat->Ux[posmXpY];
             UDxmXpY.conjg();
 
-            UxpX = lat->cells[posX]->getUx();
-            UxpY = lat->cells[posY]->getUx();
+            UxpX = lat->Ux[posX];
+            UxpY = lat->Ux[posY];
             UDxpX = UxpX;
             UDxpX.conjg();
             UDxpY = UxpY;
             UDxpY.conjg();
 
-            UxpXpY = lat->cells[posXY]->getUx();
-            UDxpXpY = lat->cells[posXY]->getUx();
+            UxpXpY = lat->Ux[posXY];
+            UDxpXpY = lat->Ux[posXY];
             UDxpXpY.conjg();
-            UxmXpY = lat->cells[posmXpY]->getUx();
+            UxmXpY = lat->Ux[posmXpY];
             UDxmXpY = UxmXpY;
             UDxmXpY.conjg();
 
-            Uy = lat->cells[pos]->getUy();
+            Uy = lat->Uy[pos];
             UDy = Uy;
             UDy.conjg();
 
-            UymY = lat->cells[posmY]->getUy();
-            UDymY = lat->cells[posmY]->getUy();
+            UymY = lat->Uy[posmY];
+            UDymY = lat->Uy[posmY];
             UDymY.conjg();
-            UypXmY = lat->cells[pospXmY]->getUy();
-            UDypXmY = lat->cells[pospXmY]->getUy();
+            UypXmY = lat->Uy[pospXmY];
+            UDypXmY = lat->Uy[pospXmY];
             UDypXmY.conjg();
 
-            UypY = lat->cells[posY]->getUy();
-            UypX = lat->cells[posX]->getUy();
+            UypY = lat->Uy[posY];
+            UypX = lat->Uy[posX];
             UDypX = UypX;
             UDypX.conjg();
 
-            UDypY = lat->cells[posY]->getUy();
+            UDypY = lat->Uy[posY];
             UDypY.conjg();
 
-            UDxpX = lat->cells[posX]->getUx();
+            UDxpX = lat->Ux[posX];
             UDxpX.conjg();
 
-            Uyp2X = lat->cells[pos2X]->getUy();
+            Uyp2X = lat->Uy[pos2X];
             UDyp2X = Uyp2X;
             UDyp2X.conjg();
-            Uxp2Y = lat->cells[pos2Y]->getUx();
+            Uxp2Y = lat->Ux[pos2Y];
             UDxp2Y = Uxp2Y;
             UDxp2Y.conjg();
 
-            UypXpY = lat->cells[posXY]->getUy();
-            UDypXpY = lat->cells[posXY]->getUy();
+            UypXpY = lat->Uy[posXY];
+            UDypXpY = lat->Uy[posXY];
             UDypXpY.conjg();
-            UymX = lat->cells[posmX]->getUy();
+            UymX = lat->Uy[posmX];
             UDymX = UymX;
             UDymX.conjg();
-            UxmY = lat->cells[posmY]->getUx();
+            UxmY = lat->Ux[posmY];
             UDxmY = UxmY;
             UDxmY.conjg();
-            UypXmY = lat->cells[pospXmY]->getUy();
+            UypXmY = lat->Uy[pospXmY];
 
             // note that the minus sign of the first terms in T^\taux and
             // T^\tauy comes from the direction of the plaquettes - I am using
@@ -2773,11 +2772,11 @@ int Evolution::multiplicity(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getE1()
+                *E1[pos] = lat->U[pos]
                            * sqrt(gfactor);  // replace one of the 1/g in the
                                              // lattice E^i by the running one
             } else {
-                *E1[pos] = lat->cells[pos]->getE1();
+                *E1[pos] = lat->U[pos];
             }
         }
     }
@@ -2967,9 +2966,9 @@ int Evolution::multiplicity(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getE2() * sqrt(gfactor);  // "
+                *E1[pos] = lat->U2[pos] * sqrt(gfactor);  // "
             } else {
-                *E1[pos] = lat->cells[pos]->getE2();
+                *E1[pos] = lat->U2[pos];
             }
         }
     }
@@ -3140,12 +3139,12 @@ int Evolution::multiplicity(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getpi()
+                *E1[pos] = lat->Ux2[pos]
                            * sqrt(gfactor);  // replace the only 1/g by the
                                              // running one (physical pi goes
                                              // like 1/g, like physical E^i)
             } else {
-                *E1[pos] = lat->cells[pos]->getpi();
+                *E1[pos] = lat->Ux2[pos];
             }
         }
     }
@@ -3713,11 +3712,11 @@ int Evolution::multiplicitynkxky(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getE1()
+                *E1[pos] = lat->U[pos]
                            * sqrt(gfactor);  // replace one of the 1/g in the
                                              // lattice E^i by the running one
             } else {
-                *E1[pos] = lat->cells[pos]->getE1();
+                *E1[pos] = lat->U[pos];
             }
         }
     }
@@ -3922,9 +3921,9 @@ int Evolution::multiplicitynkxky(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getE2() * sqrt(gfactor);  // "
+                *E1[pos] = lat->U2[pos] * sqrt(gfactor);  // "
             } else {
-                *E1[pos] = lat->cells[pos]->getE2();
+                *E1[pos] = lat->U2[pos];
             }
         }
     }
@@ -4098,12 +4097,12 @@ int Evolution::multiplicitynkxky(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getpi()
+                *E1[pos] = lat->Ux2[pos]
                            * sqrt(gfactor);  // replace the only 1/g by the
                                              // running one (physical pi goes
                                              // like 1/g, like physical E^i)
             } else {
-                *E1[pos] = lat->cells[pos]->getpi();
+                *E1[pos] = lat->Ux2[pos];
             }
         }
     }
@@ -4644,8 +4643,8 @@ int Evolution::correlations(
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             pos = i * N + j;
-            U1 = lat->cells[pos]->getUx();
-            U2 = lat->cells[pos]->getUy();
+            U1 = lat->Ux[pos];
+            U2 = lat->Uy[pos];
 
             U1.logm();
             U2.logm();
@@ -4757,25 +4756,25 @@ int Evolution::correlations(
                 gfactor = 1.;
 
             if (param->getRunWithkt() == 0) {
-                *E1[pos] = lat->cells[pos]->getE1()
+                *E1[pos] = lat->U[pos]
                            * sqrt(gfactor);  // replace one of the 1/g in the
                                              // lattice E^i by the running one
-                *E2[pos] = lat->cells[pos]->getE2() * sqrt(gfactor);  // "
-                *pi[pos] = lat->cells[pos]->getpi()
+                *E2[pos] = lat->U2[pos] * sqrt(gfactor);  // "
+                *pi[pos] = lat->Ux2[pos]
                            * sqrt(gfactor);  // replace the only 1/g by the
                                              // running one (physical pi goes
                                              // like 1/g, like physical E^i)
                 *A1[pos] = *A1[pos] * sqrt(gfactor);  //"
                 *A2[pos] = *A2[pos] * sqrt(gfactor);  // "
-                *phi[pos] = lat->cells[pos]->getphi()
+                *phi[pos] = lat->Uy2[pos]
                             * sqrt(gfactor);  // replace the only 1/g by the
                                               // running one (physical pi goes
                                               // like 1/g, like physical E^i)
             } else {
-                *E1[pos] = lat->cells[pos]->getE1();
-                *E2[pos] = lat->cells[pos]->getE2();
-                *pi[pos] = lat->cells[pos]->getpi();
-                *phi[pos] = lat->cells[pos]->getphi();
+                *E1[pos] = lat->U[pos];
+                *E2[pos] = lat->U2[pos];
+                *pi[pos] = lat->Ux2[pos];
+                *phi[pos] = lat->Uy2[pos];
             }
         }
     }

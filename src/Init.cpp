@@ -1774,7 +1774,7 @@ void writeInitialWilsonTrainingData(Lattice *lat, Parameters *param) {
       for (int y = 0; y < N; ++y) {
         const int pos = x * N + y;
         const Matrix &matrix =
-            (beam == 0) ? lat->cells[pos]->getU() : lat->cells[pos]->getU2();
+            (beam == 0) ? lat->U[pos] : lat->U2[pos];
         const std::complex<double> *elements = matrix.data();
         const std::size_t siteOffset =
             static_cast<std::size_t>(pos) * Nc * Nc;
@@ -1933,9 +1933,9 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
                     in[aa] = -(rhoACoeff[aa][pos]).real();
                 }
                 tempNew = getUfromExponent(in);
-                temp = tempNew * lat->cells[pos]->getU();
+                temp = tempNew * lat->U[pos];
                 // set U
-                lat->cells[pos]->setU(temp);
+                lat->U[pos] = (temp);
             }
         }
 
@@ -2011,10 +2011,10 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
                     in[aa] = -(rhoACoeff[aa][pos]).real();
                 }
                 tempNew = getUfromExponent(in);
-                temp = tempNew * lat->cells[pos]->getU2();
+                temp = tempNew * lat->U2[pos];
 
                 // set U
-                lat->cells[pos]->setU2(temp);
+                lat->U2[pos] = (temp);
             }
         }
 
@@ -2062,7 +2062,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
                 {
                     int pos = ix * N + iy;
                     foutU << ix << " " << iy << " "
-                          << (lat->cells[pos]->getU()).MatrixToString() << endl;
+                          << (lat->U[pos]).MatrixToString() << endl;
                 }
                 foutU << endl;
             }
@@ -2077,7 +2077,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
                 {
                     int pos = ix * N + iy;
                     foutU2 << ix << " " << iy << " "
-                           << (lat->cells[pos]->getU2()).MatrixToString()
+                           << (lat->U2[pos]).MatrixToString()
                            << endl;
                 }
                 foutU2 << endl;
@@ -2116,13 +2116,13 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
                         for (int b = 0; b < 3; b++) {
                             int indx = N * iy + ix;
                             val1[0] =
-                                (lat->cells[indx]->getU()).getRe(a1 * Nc_ + b);
+                                (lat->U[indx]).getRe(a1 * Nc_ + b);
                             val1[1] =
-                                (lat->cells[indx]->getU()).getIm(a1 * Nc_ + b);
+                                (lat->U[indx]).getIm(a1 * Nc_ + b);
                             val2[0] =
-                                (lat->cells[indx]->getU2()).getRe(a1 * Nc_ + b);
+                                (lat->U2[indx]).getRe(a1 * Nc_ + b);
                             val2[1] =
-                                (lat->cells[indx]->getU2()).getIm(a1 * Nc_ + b);
+                                (lat->U2[indx]).getIm(a1 * Nc_ + b);
 
                             Outfile1.write((char *)val1, 2 * sizeof(double));
                             Outfile2.write((char *)val2, 2 * sizeof(double));
@@ -2246,7 +2246,7 @@ void Init::readV(Lattice *lat, Parameters *param, int format) {
                 if (ix < 0) continue;
 
                 int pos = ix * N + j;
-                lat->cells[pos]->setU(temp);
+                lat->U[pos] = (temp);
             }
         }
 
@@ -2288,7 +2288,7 @@ void Init::readV(Lattice *lat, Parameters *param, int format) {
                 if (ix >= N) continue;
 
                 int pos = ix * N + j;
-                lat->cells[pos]->setU2(temp);
+                lat->U2[pos] = (temp);
             }
         }
 
@@ -2376,7 +2376,7 @@ void Init::readV(Lattice *lat, Parameters *param, int format) {
                         INPUT_CTR++;
                         continue;
                     }
-                    lat->cells[indx]->getU().set(j, k, complex<double>(re, im));
+                    lat->U[indx].set(j, k, complex<double>(re, im));
                 }
                 INPUT_CTR++;
             }
@@ -2460,7 +2460,7 @@ void Init::readV(Lattice *lat, Parameters *param, int format) {
                             INPUT_CTR++;
                             continue;
                         }
-                        lat->cells[indx]->getU2().set(
+                        lat->U2[indx].set(
                             j, k, complex<double>(re, im));
                         // if (indx > 65000) cout << "Save ok" << endl;
                     }
@@ -2641,35 +2641,35 @@ void Init::init(
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            auto checkU = lat->cells[pos]->getU().trace();
+            auto checkU = lat->U[pos].trace();
             if (checkU != checkU) {
-                lat->cells[pos]->setU(one_);
+                lat->U[pos] = (one_);
             }
 
-            checkU = lat->cells[pos]->getU2().trace();
+            checkU = lat->U2[pos].trace();
             if (checkU != checkU) {
-                lat->cells[pos]->setU2(one_);
+                lat->U2[pos] = (one_);
             }
         }
 
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            UDx = lat->cells[lat->pospX[pos]]->getU();
+            UDx = lat->U[lat->pospX[pos]];
             UDx.conjg();
-            lat->cells[pos]->setUx1(lat->cells[pos]->getU() * UDx);
+            lat->Ux1[pos] = (lat->U[pos] * UDx);
 
-            UDy = lat->cells[lat->pospY[pos]]->getU();
+            UDy = lat->U[lat->pospY[pos]];
             UDy.conjg();
-            lat->cells[pos]->setUy1(lat->cells[pos]->getU() * UDy);
+            lat->Uy1[pos] = (lat->U[pos] * UDy);
 
-            UDx = lat->cells[lat->pospX[pos]]->getU2();
+            UDx = lat->U2[lat->pospX[pos]];
             UDx.conjg();
-            lat->cells[pos]->setUx2(lat->cells[pos]->getU2() * UDx);
+            lat->Ux2[pos] = (lat->U2[pos] * UDx);
 
-            UDy = lat->cells[lat->pospY[pos]]->getU2();
+            UDy = lat->U2[lat->pospY[pos]];
             UDy.conjg();
-            lat->cells[pos]->setUy2(lat->cells[pos]->getU2() * UDy);
+            lat->Uy2[pos] = (lat->U2[pos] * UDy);
         }
         // -----------------------------------------------------------------
         // from Ux(1,2) and Uy(1,2) compute Ux(3) and Uy(3):
@@ -2677,21 +2677,21 @@ void Init::init(
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            UDx1 = lat->cells[pos]->getUx1();
-            UDx2 = lat->cells[pos]->getUx2();
+            UDx1 = lat->Ux1[pos];
+            UDx2 = lat->Ux2[pos];
             // bool status = findUInForwardLightconeBjoern(UDx1, UDx2, temp2);
             bool status = findUInForwardLightconeChun(UDx1, UDx2, temp2);
-            lat->cells[pos]->setUx(temp2);
+            lat->Ux[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
                      << " y = " << pos % param->getSize() << endl;
             }
 
-            UDy1 = lat->cells[pos]->getUy1();
-            UDy2 = lat->cells[pos]->getUy2();
+            UDy1 = lat->Uy1[pos];
+            UDy2 = lat->Uy2[pos];
             // status = findUInForwardLightconeBjoern(UDy1, UDy2, temp2);
             status = findUInForwardLightconeChun(UDy1, UDy2, temp2);
-            lat->cells[pos]->setUy(temp2);
+            lat->Uy[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
                      << " y = " << pos % param->getSize() << endl;
@@ -2703,28 +2703,28 @@ void Init::init(
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
             // x part in sum:
-            Ux1mUx2 = lat->cells[pos]->getUx1() - lat->cells[pos]->getUx2();
-            UDx1 = lat->cells[pos]->getUx1();
+            Ux1mUx2 = lat->Ux1[pos] - lat->Ux2[pos];
+            UDx1 = lat->Ux1[pos];
             UDx1.conjg();
-            UDx2 = lat->cells[pos]->getUx2();
+            UDx2 = lat->Ux2[pos];
             UDx2.conjg();
             UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[pos]->getUx();
+            Ux = lat->Ux[pos];
             UDx = Ux;
             UDx.conjg();
 
             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
 
-            Ux1mUx2 = lat->cells[lat->posmX[pos]]->getUx1()
-                      - lat->cells[lat->posmX[pos]]->getUx2();
-            UDx1 = lat->cells[lat->posmX[pos]]->getUx1();
+            Ux1mUx2 = lat->Ux1[lat->posmX[pos]]
+                      - lat->Ux2[lat->posmX[pos]];
+            UDx1 = lat->Ux1[lat->posmX[pos]];
             UDx1.conjg();
-            UDx2 = lat->cells[lat->posmX[pos]]->getUx2();
+            UDx2 = lat->Ux2[lat->posmX[pos]];
             UDx2.conjg();
             UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[lat->posmX[pos]]->getUx();
+            Ux = lat->Ux[lat->posmX[pos]];
             UDx = Ux;
             UDx.conjg();
 
@@ -2732,14 +2732,14 @@ void Init::init(
                 temp2 - UDx * Ux1mUx2 + Ux1mUx2 + UDx1mUDx2 * Ux - UDx1mUDx2;
 
             // y part in sum
-            Uy1mUy2 = lat->cells[pos]->getUy1() - lat->cells[pos]->getUy2();
-            UDy1 = lat->cells[pos]->getUy1();
+            Uy1mUy2 = lat->Uy1[pos] - lat->Uy2[pos];
+            UDy1 = lat->Uy1[pos];
             UDy1.conjg();
-            UDy2 = lat->cells[pos]->getUy2();
+            UDy2 = lat->Uy2[pos];
             UDy2.conjg();
             UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[pos]->getUy();
+            Uy = lat->Uy[pos];
             UDy = Uy;
             UDy.conjg();
 
@@ -2747,50 +2747,50 @@ void Init::init(
             temp2 =
                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
 
-            Uy1mUy2 = lat->cells[lat->posmY[pos]]->getUy1()
-                      - lat->cells[lat->posmY[pos]]->getUy2();
-            UDy1 = lat->cells[lat->posmY[pos]]->getUy1();
+            Uy1mUy2 = lat->Uy1[lat->posmY[pos]]
+                      - lat->Uy2[lat->posmY[pos]];
+            UDy1 = lat->Uy1[lat->posmY[pos]];
             UDy1.conjg();
-            UDy2 = lat->cells[lat->posmY[pos]]->getUy2();
+            UDy2 = lat->Uy2[lat->posmY[pos]];
             UDy2.conjg();
             UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[lat->posmY[pos]]->getUy();
+            Uy = lat->Uy[lat->posmY[pos]];
             UDy = Uy;
             UDy.conjg();
 
             temp2 =
                 temp2 - UDy * Uy1mUy2 + Uy1mUy2 + UDy1mUDy2 * Uy - UDy1mUDy2;
 
-            lat->cells[pos]->setE1((1. / 8.) * temp2);
+            lat->U[pos] = ((1. / 8.) * temp2);
         }
 
         // with plus ax, ay
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
             // x part in sum:
-            Ux1mUx2 = lat->cells[pos]->getUx1() - lat->cells[pos]->getUx2();
-            UDx1 = lat->cells[pos]->getUx1();
+            Ux1mUx2 = lat->Ux1[pos] - lat->Ux2[pos];
+            UDx1 = lat->Ux1[pos];
             UDx1.conjg();
-            UDx2 = lat->cells[pos]->getUx2();
+            UDx2 = lat->Ux2[pos];
             UDx2.conjg();
             UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[pos]->getUx();
+            Ux = lat->Ux[pos];
             UDx = Ux;
             UDx.conjg();
 
             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
 
-            Ux1mUx2 = lat->cells[lat->pospX[pos]]->getUx1()
-                      - lat->cells[lat->pospX[pos]]->getUx2();
-            UDx1 = lat->cells[lat->pospX[pos]]->getUx1();
+            Ux1mUx2 = lat->Ux1[lat->pospX[pos]]
+                      - lat->Ux2[lat->pospX[pos]];
+            UDx1 = lat->Ux1[lat->pospX[pos]];
             UDx1.conjg();
-            UDx2 = lat->cells[lat->pospX[pos]]->getUx2();
+            UDx2 = lat->Ux2[lat->pospX[pos]];
             UDx2.conjg();
             UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[lat->pospX[pos]]->getUx();
+            Ux = lat->Ux[lat->pospX[pos]];
             UDx = Ux;
             UDx.conjg();
 
@@ -2798,14 +2798,14 @@ void Init::init(
                 temp2 - UDx * Ux1mUx2 + Ux1mUx2 + UDx1mUDx2 * Ux - UDx1mUDx2;
 
             // y part in sum
-            Uy1mUy2 = lat->cells[pos]->getUy1() - lat->cells[pos]->getUy2();
-            UDy1 = lat->cells[pos]->getUy1();
+            Uy1mUy2 = lat->Uy1[pos] - lat->Uy2[pos];
+            UDy1 = lat->Uy1[pos];
             UDy1.conjg();
-            UDy2 = lat->cells[pos]->getUy2();
+            UDy2 = lat->Uy2[pos];
             UDy2.conjg();
             UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[pos]->getUy();
+            Uy = lat->Uy[pos];
             UDy = Uy;
             UDy.conjg();
 
@@ -2813,62 +2813,62 @@ void Init::init(
             temp2 =
                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
 
-            Uy1mUy2 = lat->cells[lat->pospY[pos]]->getUy1()
-                      - lat->cells[lat->pospY[pos]]->getUy2();
-            UDy1 = lat->cells[lat->pospY[pos]]->getUy1();
+            Uy1mUy2 = lat->Uy1[lat->pospY[pos]]
+                      - lat->Uy2[lat->pospY[pos]];
+            UDy1 = lat->Uy1[lat->pospY[pos]];
             UDy1.conjg();
-            UDy2 = lat->cells[lat->pospY[pos]]->getUy2();
+            UDy2 = lat->Uy2[lat->pospY[pos]];
             UDy2.conjg();
             UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[lat->pospY[pos]]->getUy();
+            Uy = lat->Uy[lat->pospY[pos]];
             UDy = Uy;
             UDy.conjg();
 
             temp2 =
                 temp2 - UDy * Uy1mUy2 + Uy1mUy2 + UDy1mUDy2 * Uy - UDy1mUDy2;
 
-            lat->cells[pos]->setE2((1. / 8.) * temp2);
+            lat->U2[pos] = ((1. / 8.) * temp2);
         }
 // compute the plaquette
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
-            UDx = lat->cells[lat->pospY[pos]]->getUx();
-            UDy = lat->cells[pos]->getUy();
+            UDx = lat->Ux[lat->pospY[pos]];
+            UDy = lat->Uy[pos];
             UDx.conjg();
             UDy.conjg();
 
-            Uplaq = lat->cells[pos]->getUx()
-                    * (lat->cells[lat->pospX[pos]]->getUy() * (UDx * UDy));
-            lat->cells[pos]->setUplaq(Uplaq);
+            Uplaq = lat->Ux[pos]
+                    * (lat->Uy[lat->pospX[pos]] * (UDx * UDy));
+            lat->Uy1[pos] = (Uplaq);
         }
 
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
-            // AM = (lat->cells[pos]->getE1()); //+lat->cells[pos]->getAetaP());
-            // AP = (lat->cells[pos]->getE2()); //+lat->cells[pos]->getAetaP());
+            // AM = (lat->U[pos]); //+lat->cells[pos]->getAetaP());
+            // AP = (lat->U2[pos]); //+lat->cells[pos]->getAetaP());
 
             // this is pi in lattice units as needed for the evolution. (later,
             // the a^4 gives the right units for the energy density
-            lat->cells[pos]->setpi(
+            lat->Ux2[pos] = (
                 complex<double>(0., -2. / param->getg())
-                * (lat->cells[pos]->getE1()));
+                * (lat->U[pos]));
             // factor -2 because I have A^eta (note the 1/8 before)
             // but want \pi (E^z).
 
-            // lat->cells[pos]->setpi(complex<double>(0.,-1./param->getg())*(AM+AP));
+            // lat->Ux2[pos] = (complex<double>(0.,-1./param->getg())*(AM+AP));
             // // factor -2 because I have A^eta (note the 1/8 before) but want
             // \pi (E^z).
         }
 
 #pragma omp for
         for (int pos = 0; pos < N * N; pos++) {
-            lat->cells[pos]->setE1(zero);
-            lat->cells[pos]->setE2(zero);
-            lat->cells[pos]->setphi(zero);
+            lat->U[pos] = (zero);
+            lat->U2[pos] = (zero);
+            lat->Uy2[pos] = (zero);
 
             // reset the Ux1 to be used for other purposes later
-            lat->cells[pos]->setUx1(one_);
+            lat->Ux1[pos] = (one_);
         }
     }
 

@@ -1,20 +1,14 @@
-
 #include "Cell.h"
 
-Cell::Cell(const int Nc)
+#include <cstdlib>
+#include <iostream>
+
+Cell::Cell(int Nc)
     : epsilon(0.),
       g2mu2A(0.),
       TpA(0.),
-      U(Nc, 1.),
       g2mu2B(0.),
       TpB(0.),
-      U2(Nc, 1.),
-      Ux(Nc, 1.),
-      Uy(Nc, 1.),
-      Ux1(Nc, 1.),
-      Uy1(Nc, 1.),
-      Ux2(Nc, 1.),
-      Uy2(Nc, 1.),
       Ttautau(0.),
       Txx(0.),
       Tyy(0.),
@@ -38,10 +32,10 @@ Cell::Cell(const int Nc)
       utau(0.),
       ux(0.),
       uy(0.),
-      ueta(0.) {}
-
-Cell::~Cell() {}
-
-SmallCell::SmallCell(const int Nc) : buffer1(Nc, 1.), buffer2(Nc, 1.) {}
-
-SmallCell::~SmallCell() {}
+      ueta(0.) {
+    if (Nc != 3) {
+        std::cerr << "Error: Cell storage is SU(3)-only; received Nc=" << Nc
+                  << ". Exiting." << std::endl;
+        std::exit(1);
+    }
+}

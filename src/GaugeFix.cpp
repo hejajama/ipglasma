@@ -63,10 +63,10 @@ void GaugeFix::FFTChi(
                     posmY = i * N + j - 1;
                 }
 
-                Ux = UDx = lat->cells[pos]->getUx();
-                Uy = UDy = lat->cells[pos]->getUy();
-                UxMx = UDxMx = lat->cells[posmX]->getUx();
-                UyMy = UDyMy = lat->cells[posmY]->getUy();
+                Ux = UDx = lat->Ux[pos];
+                Uy = UDy = lat->Uy[pos];
+                UxMx = UDxMx = lat->Ux[posmX];
+                UyMy = UDyMy = lat->Uy[posmY];
                 UDx.conjg();
                 UDy.conjg();
                 UDxMx.conjg();
@@ -146,7 +146,7 @@ void GaugeFix::FFTChi(
                         localg = one;
                     }
 
-                    lat->cells[localpos]->setg(localg);
+                    lat->Ux1[localpos] = (localg);
                 }
             }
         }
@@ -184,21 +184,21 @@ void GaugeFix::gaugeTransform(Lattice *lat, Parameters *param, int i, int j) {
         posmY = i * N + j - 1;
     }
 
-    g = gdag = lat->cells[pos]->getg();
+    g = gdag = lat->Ux1[pos];
     gdag.conjg();
 
     // gauge transform Ux and Uy
-    lat->cells[pos]->setUx(g * lat->cells[pos]->getUx());
-    lat->cells[pos]->setUy(g * lat->cells[pos]->getUy());
+    lat->Ux[pos] = (g * lat->Ux[pos]);
+    lat->Uy[pos] = (g * lat->Uy[pos]);
 
-    lat->cells[posmX]->setUx(lat->cells[posmX]->getUx() * gdag);
-    lat->cells[posmY]->setUy(lat->cells[posmY]->getUy() * gdag);
+    lat->Ux[posmX] = (lat->Ux[posmX] * gdag);
+    lat->Uy[posmY] = (lat->Uy[posmY] * gdag);
 
     // gauge transform Ex and Ey
-    lat->cells[pos]->setE1(g * lat->cells[pos]->getE1() * gdag);
-    lat->cells[pos]->setE2(g * lat->cells[pos]->getE2() * gdag);
+    lat->U[pos] = (g * lat->U[pos] * gdag);
+    lat->U2[pos] = (g * lat->U2[pos] * gdag);
 
     // gauge transform phi and pi
-    lat->cells[pos]->setphi(g * lat->cells[pos]->getphi() * gdag);
-    lat->cells[pos]->setpi(g * lat->cells[pos]->getpi() * gdag);
+    lat->Uy2[pos] = (g * lat->Uy2[pos] * gdag);
+    lat->Ux2[pos] = (g * lat->Ux2[pos] * gdag);
 }
