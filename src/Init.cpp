@@ -28,6 +28,51 @@ using std::ofstream;
 using std::string;
 using std::stringstream;
 
+namespace {
+
+// SplitMix64 finalizer/counter step.  This is used only to construct a
+// deterministic, stateless retry stream for the forward-light-cone solver.
+inline std::uint64_t splitmix64(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+inline std::uint64_t forwardLightconeRetrySeed(
+    std::uint64_t runSeed, int eventId, int pos, int direction) {
+    std::uint64_t key = splitmix64(runSeed);
+    key = splitmix64(
+        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(eventId))
+               + 0xD1B54A32D192ED03ULL));
+    key = splitmix64(
+        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(pos))
+               + 0x94D049BB133111EBULL));
+    key = splitmix64(
+        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(direction))
+               + 0xBF58476D1CE4E5B9ULL));
+    return key;
+}
+
+inline double deterministicRetryGaussian(
+    std::uint64_t seed, std::uint64_t drawIndex) {
+    // Build two open-interval uniform doubles from independent SplitMix64
+    // counters, then use Box-Muller.  No shared RNG state is touched.
+    const std::uint64_t counter = 2ULL * drawIndex;
+    const std::uint64_t r1 =
+        splitmix64(seed + 0x9E3779B97F4A7C15ULL * (counter + 1ULL));
+    const std::uint64_t r2 =
+        splitmix64(seed + 0x9E3779B97F4A7C15ULL * (counter + 2ULL));
+
+    constexpr double invTwo53 = 1.0 / 9007199254740992.0;
+    const double u1 = (static_cast<double>(r1 >> 11) + 0.5) * invTwo53;
+    const double u2 = (static_cast<double>(r2 >> 11) + 0.5) * invTwo53;
+    constexpr double twoPi = 6.283185307179586476925286766559;
+    return std::sqrt(-2.0 * std::log(u1)) * std::cos(twoPi * u2);
+}
+
+}  // namespace
+
 //**************************************************************************
 // Init class.
 
@@ -2680,7 +2725,10 @@ void Init::init(
             UDx1 = lat->Ux1[pos];
             UDx2 = lat->Ux2[pos];
             // bool status = findUInForwardLightconeBjoern(UDx1, UDx2, temp2);
-            bool status = findUInForwardLightconeChun(UDx1, UDx2, temp2);
+            const std::uint64_t retrySeedX = forwardLightconeRetrySeed(
+                param->getRandomSeed(), param->getEventId(), pos, 0);
+            bool status =
+                findUInForwardLightconeChun(UDx1, UDx2, temp2, retrySeedX);
             lat->Ux[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
@@ -2690,7 +2738,10 @@ void Init::init(
             UDy1 = lat->Uy1[pos];
             UDy2 = lat->Uy2[pos];
             // status = findUInForwardLightconeBjoern(UDy1, UDy2, temp2);
-            status = findUInForwardLightconeChun(UDy1, UDy2, temp2);
+            const std::uint64_t retrySeedY = forwardLightconeRetrySeed(
+                param->getRandomSeed(), param->getEventId(), pos, 1);
+            status =
+                findUInForwardLightconeChun(UDy1, UDy2, temp2, retrySeedY);
             lat->Uy[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
@@ -3544,7 +3595,8 @@ bool Init::findUInForwardLightconeBjoern(Matrix &U1, Matrix &U2, Matrix &Usol) {
     return (success);
 }
 
-bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
+bool Init::findUInForwardLightconeChun(
+    Matrix &U1, Matrix &U2, Matrix &Usol, std::uint64_t retrySeed) {
     const int maxIterations = 2000;
     const int maxRetrys = 200;
 
@@ -3580,6 +3632,10 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
 
     int iter = 0;
     int nRestart = 0;
+    std::uint64_t retryDraw = 0;
+    auto nextRetryGaussian = [&]() {
+        return deterministicRetryGaussian(retrySeed, retryDraw++);
+    };
     while (Fzero > 1e-6 && iter < maxIterations && nRestart < maxRetrys) {
         iter++;
 
@@ -3648,7 +3704,7 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
             }
         } else {
             for (int ai = 0; ai < Nc2m1_; ai++) {
-                alpha[ai] = random_ptr_->Gauss();
+                alpha[ai] = nextRetryGaussian();
             }
         }
         Usol = getUfromExponent(alpha) * U0;
@@ -3661,7 +3717,7 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
         }
         if (iter == maxIterations) {
             for (int ai = 0; ai < Nc2m1_; ai++) {
-                alpha[ai] = random_ptr_->Gauss();
+                alpha[ai] = nextRetryGaussian();
             }
             Usol = getUfromExponent(alpha) * U0;
             Usoldagger = Usol;
