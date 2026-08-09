@@ -50,9 +50,13 @@ void closeBufferedTextOutput(ofstream &output, const string &filename) {
 }
 
 
-bool binaryTmunuEnabled() {
+bool binaryTmunuEnabled(Parameters *param) {
+    const bool inputDefault = param->getWriteTmunuBinary() != 0;
     const char *value = std::getenv("IPGLASMA_BINARY_TMUNU");
-    if (value == NULL || value[0] == '\0') return false;
+    if (value == NULL || value[0] == '\0') return inputDefault;
+
+    // An explicitly set environment variable remains a convenient runtime
+    // override for benchmarking and existing launch scripts.
     const string text(value);
     return !(text == "0" || text == "false" || text == "FALSE"
              || text == "off" || text == "OFF" || text == "no"
@@ -136,20 +140,11 @@ void MyEigen::flowVelocity4DImpl(
     Lattice *lat, Parameters *param, int it, bool finalFlag,
     bool tmunuOnly) {
     int N = param->getSize();
-    int pos;
-    int changeSign;
     int count;
     double L = param->getL();
     double a = L / N;  // lattice spacing in fm
-    double x, y, ux = 0., uy = 0., ueta = 0., utau = 0.;  // [GeV^2]
+    double x, y;
     double dtau = param->getdtau();
-    gsl_complex square;
-    gsl_complex factor;
-    gsl_complex euklidiansquare;
-    double eps = 0.;
-    gsl_complex z_aux;
-    gsl_complex tau2;
-    int foundU;
     double averageux = 0.;
     double averageuy = 0.;
     double averageueta = 0.;
@@ -166,22 +161,6 @@ void MyEigen::flowVelocity4DImpl(
     // thread count. The four diagnostic averages (printed to stdout only) use
     // an OpenMP reduction whose summation order differs from serial, so those
     // logged numbers may differ in their last bits -- no data file is affected.
-    (void)pos;
-    (void)square;
-    (void)factor;
-    (void)euklidiansquare;
-    (void)z_aux;
-    (void)tau2;
-    (void)changeSign;
-    (void)foundU;
-    (void)x;
-    (void)y;
-    (void)ux;
-    (void)uy;
-    (void)ueta;
-    (void)utau;
-    (void)eps;
-
 #pragma omp parallel reduction(+ : averageux, averageuy, averageueta, \
                                    averageeps, count)
     {
@@ -191,13 +170,9 @@ void MyEigen::flowVelocity4DImpl(
 
 #pragma omp for
         for (int posLoop = 0; posLoop < N * N; posLoop++) {
-            int si = posLoop / N;
-            int sj = posLoop % N;
-            int pos = posLoop;
-            double x = -L / 2. + a * si;
-            double y = -L / 2. + a * sj;
-            (void)x;
-            (void)y;
+            const int si = posLoop / N;
+            const int sj = posLoop % N;
+            const int pos = posLoop;
             // Flow velocity defaults to the local rest frame (0,0,0,1):
             // zero spatial flow, u^tau = 1. (See note in the serial version:
             // this also removes the old cross-cell carryover bug.)
@@ -960,7 +935,7 @@ void MyEigen::flowVelocity4DImpl(
         double resultT00, resultT0x, resultT0y, resultT0eta, resultTxx,
             resultTxy;
         double resultTxeta, resultTyy, resultTyeta, resultTetaeta;
-        const bool writeBinaryTmunu = binaryTmunuEnabled();
+        const bool writeBinaryTmunu = binaryTmunuEnabled(param);
         stringstream strTmunu_name;
         strTmunu_name << "Tmunu-t" << it * dtau * a << "-"
                       << param->getEventId()

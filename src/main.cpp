@@ -599,6 +599,8 @@ int readInput(
     param->setWriteOutputs(setup->IFind(file_name, "writeOutputs"));
     param->setWriteEpsilonUHydro(
         setup->IFind(file_name, "writeEpsilonUHydro"));
+    param->setWriteTmunuBinary(
+        setup->IFindOptional(file_name, "writeTmunuBinary", 1));
     param->setWriteOutputsToHDF5(setup->IFind(file_name, "writeOutputsToHDF5"));
     param->setWriteEvolution(setup->IFind(file_name, "writeEvolution"));
     param->setWriteInitialWilsonLines(
@@ -681,6 +683,7 @@ void writeparams(Parameters *param) {
     fout1 << "m " << param->getm() << endl;
     fout1 << "rmax " << param->getRmax() << endl;
     fout1 << "UVdamp " << param->getUVdamp() << endl;
+    fout1 << "writeTmunuBinary " << param->getWriteTmunuBinary() << endl;
     if (param->getSetWSDeformParams()) {
         fout1 << "setWSDeformParams " << param->getSetWSDeformParams() << endl;
         fout1 << "R_WS " << param->getR_WS() << endl;
