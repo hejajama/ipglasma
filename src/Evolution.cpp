@@ -362,6 +362,13 @@ void evolveStepPersistent(
     }
 }
 
+inline void makeTmunuTracelessDifference(
+    const Matrix &lhs, const Matrix &rhs, const Matrix &one, int Nc,
+    Matrix &out) {
+    out = lhs - rhs;
+    out -= (out.trace() / static_cast<double>(Nc)) * one;
+}
+
 }  // namespace
 
 void Evolution::evolveU(
@@ -1098,6 +1105,28 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         Matrix phiTildeY(Nc);
         Matrix phiTildeXY1(Nc);
         Matrix phiTildeXY2(Nc);
+        Matrix chainA(Nc);
+        Matrix chainB(Nc);
+        Matrix xMinus0(Nc);
+        Matrix xMinusM(Nc);
+        Matrix xMinusP(Nc);
+        Matrix xMinusT(Nc);
+        Matrix xMinusSum0(Nc);
+        Matrix xMinusSum1(Nc);
+        Matrix yPlus0(Nc);
+        Matrix yPlusM(Nc);
+        Matrix yPlusP(Nc);
+        Matrix yPlusT(Nc);
+        Matrix yPlusSum0(Nc);
+        Matrix yPlusSum1(Nc);
+        Matrix covGradX0(Nc);
+        Matrix covGradY0(Nc);
+        Matrix gradXAtY(Nc);
+        Matrix gradYAtX(Nc);
+        Matrix gradXAtYToPos(Nc);
+        Matrix gradYAtXToPos(Nc);
+        Matrix E1AtYToPos(Nc);
+        Matrix E2AtXToPos(Nc);
 
 
     // set plaquette in every cell
@@ -1300,14 +1329,6 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             E1p = lat->U[posY];  // shift x value in y direction
             E2p = lat->U2[posX];  // shift y value in x direction
 
-            Uplaq = lat->Uy1[pos];
-            Uplaq1 = lat->Uy1[posmX];
-            Uplaq2 = lat->Uy1[posmY];
-            UplaqD = Uplaq;
-            UplaqD.conjg();
-            Uplaq1D = Uplaq1;
-            Uplaq1D.conjg();
-
             pi = lat->Ux2[pos];
             piX = lat->Ux2[posX];
             piY = lat->Ux2[posY];
@@ -1391,9 +1412,60 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
             UDxmY.conjg();
             UypXmY = lat->Uy[pospXmY];
 
-            // note that the minus sign of the first terms in T^\taux and
-            // T^\tauy comes from the direction of the plaquettes - I am using
-            // +F^{yx} instead of -F^{xy} if you like.
+            // Cache the repeated four-link magnetic structures once per site.
+            // The historical expressions recomputed every four-link chain once
+            // for the matrix difference and again for its trace subtraction,
+            // then repeated the same structures in Txeta/Tyeta. Preserve the
+            // original product ordering, but materialize each traceless
+            // difference only once and reuse it below.
+            chainA = Uy * UxpY * UDypX * UDx;
+            chainB = Ux * UypX * UDxpY * UDy;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinus0);
+
+            chainA = UDxmX * UymX * UxmXpY * UDy;
+            chainB = Uy * UDxmXpY * UDymX * UxmX;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusM);
+
+            chainA = UypX * UxpXpY * UDyp2X * UDxpX;
+            chainB = UxpX * Uyp2X * UDxpXpY * UDypX;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusP);
+
+            chainA = UDx * Uy * UxpY * UDypX;
+            chainB = UypX * UDxpY * UDy * Ux;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusT);
+
+            xMinusSum0 = xMinus0 + xMinusM;
+            xMinusSum1 = xMinusP + xMinusT;
+
+            // The first y-oriented difference is the opposite orientation of
+            // xMinus0 and can be reused by a sign flip.
+            yPlus0 = (-1.) * xMinus0;
+
+            chainA = UDymY * UxmY * UypXmY * UDx;
+            chainB = Ux * UDypXmY * UDxmY * UymY;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusM);
+
+            chainA = UxpY * UypXpY * UDxp2Y * UDypY;
+            chainB = UypY * Uxp2Y * UDypXpY * UDxpY;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusP);
+
+            chainA = UDy * Ux * UypX * UDxpY;
+            chainB = UxpY * UDypX * UDx * Uy;
+            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusT);
+
+            yPlusSum0 = yPlus0 + yPlusM;
+            yPlusSum1 = yPlusP + yPlusT;
+
+            // Cache covariant scalar gradients shared by Txy, Ttaueta,
+            // Txeta, and Tyeta.
+            covGradX0 = Ux * phiX * UDx - phi;
+            covGradY0 = Uy * phiY * UDy - phi;
+            gradXAtY = UxpY * phiXY * UDxpY - phiY;
+            gradYAtX = UypX * phiXY * UDypX - phiX;
+            gradXAtYToPos = Uy * gradXAtY * UDy;
+            gradYAtXToPos = Ux * gradYAtX * UDx;
+
+            chainA = E2 * xMinusSum0 + E2p * xMinusSum1;
             const complex<double> ttauxPiTrace =
                 su3::traceABCD(pi, Ux, phiX, UDx)
                 - su3::traceABCD(pi, UDxmX, phimX, UxmX)
@@ -1403,38 +1475,11 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                 - su3::traceABCD(piX, UDx, phi, Ux)
                 + su3::traceABCD(piXY, UxpXpY, phi2XY, UDxpXpY)
                 - su3::traceABCD(piXY, UDxpY, phiY, UxpY);
-
             lat->cells[pos]->setTtaux(
-                +2. / (it * dtau) / 8.
-                    * (E2
-                           * (Uy * UxpY * UDypX * UDx - Ux * UypX * UDxpY * UDy
-                              - (Uy * UxpY * UDypX * UDx
-                                 - Ux * UypX * UDxpY * UDy)
-                                        .trace()
-                                    / static_cast<double>(Nc) * one
-                              + UDxmX * UymX * UxmXpY * UDy
-                              - Uy * UDxmXpY * UDymX * UxmX
-                              - (UDxmX * UymX * UxmXpY * UDy
-                                 - Uy * UDxmXpY * UDymX * UxmX)
-                                        .trace()
-                                    / static_cast<double>(Nc) * one)
-                       + E2p
-                             * (UypX * UxpXpY * UDyp2X * UDxpX
-                                - UxpX * Uyp2X * UDxpXpY * UDypX
-                                - (UypX * UxpXpY * UDyp2X * UDxpX
-                                   - UxpX * Uyp2X * UDxpXpY * UDypX)
-                                          .trace()
-                                      / static_cast<double>(Nc) * one
-                                + UDx * Uy * UxpY * UDypX
-                                - UypX * UDxpY * UDy * Ux
-                                - (UDx * Uy * UxpY * UDypX
-                                   - UypX * UDxpY * UDy * Ux)
-                                          .trace()
-                                      / static_cast<double>(Nc) * one))
-                          .trace()
-                          .imag()
+                +2. / (it * dtau) / 8. * chainA.trace().imag()
                 - 2. / 8. / (it * dtau) * ttauxPiTrace.real());
 
+            chainA = E1 * yPlusSum0 + E1p * yPlusSum1;
             const complex<double> ttauyPiTrace =
                 su3::traceABCD(pi, Uy, phiY, UDy)
                 - su3::traceABCD(pi, UDymY, phimY, UymY)
@@ -1444,134 +1489,47 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
                 - su3::traceABCD(piY, UDy, phi, Uy)
                 + su3::traceABCD(piXY, UypXpY, phiX2Y, UDypXpY)
                 - su3::traceABCD(piXY, UDypX, phiX, UypX);
-
             lat->cells[pos]->setTtauy(
-                +2. / (it * dtau) / 8.
-                    * (E1
-                           * (Ux * UypX * UDxpY * UDy - Uy * UxpY * UDypX * UDx
-                              - (Ux * UypX * UDxpY * UDy
-                                 - Uy * UxpY * UDypX * UDx)
-                                        .trace()
-                                    / static_cast<double>(Nc) * one
-                              + UDymY * UxmY * UypXmY * UDx
-                              - Ux * UDypXmY * UDxmY * UymY
-                              - (UDymY * UxmY * UypXmY * UDx
-                                 - Ux * UDypXmY * UDxmY * UymY)
-                                        .trace()
-                                    / static_cast<double>(Nc) * one)
-                       + E1p
-                             * (UxpY * UypXpY * UDxp2Y * UDypY
-                                - UypY * Uxp2Y * UDypXpY * UDxpY
-                                - (UxpY * UypXpY * UDxp2Y * UDypY
-                                   - UypY * Uxp2Y * UDypXpY * UDxpY)
-                                          .trace()
-                                      / static_cast<double>(Nc) * one
-                                + UDy * Ux * UypX * UDxpY
-                                - UxpY * UDypX * UDx * Uy
-                                - (UDy * Ux * UypX * UDxpY
-                                   - UxpY * UDypX * UDx * Uy)
-                                          .trace()
-                                      / static_cast<double>(Nc) * one))
-                          .trace()
-                          .imag()
+                +2. / (it * dtau) / 8. * chainA.trace().imag()
                 - 2. / 8. / (it * dtau) * ttauyPiTrace.real());
 
             const complex<double> ttauetaTrace =
-                su3::traceABCD(E1, Ux, phiX, UDx) - su3::traceAB(E1, phi)
-                + su3::traceABCD(E1p, UxpY, phiXY, UDxpY)
-                - su3::traceAB(E1p, phiY)
-                + su3::traceABCD(E2, Uy, phiY, UDy) - su3::traceAB(E2, phi)
-                + su3::traceABCD(E2p, UypX, phiXY, UDypX)
-                - su3::traceAB(E2p, phiX);
+                su3::traceAB(E1, covGradX0) + su3::traceAB(E1p, gradXAtY)
+                + su3::traceAB(E2, covGradY0) + su3::traceAB(E2p, gradYAtX);
             lat->cells[pos]->setTtaueta(
                 g / (it * dtau) / (it * dtau) / (it * dtau)
                 * ttauetaTrace.real());
 
-            // T^xy
+            E1AtYToPos = Uy * E1p * UDy;
+            E2AtXToPos = Ux * E2p * UDx;
+            chainA =
+                -1. / 4. * g * g * (E1 + E1AtYToPos) * (E2 + E2AtXToPos)
+                + 1. / 4.
+                      * (covGradX0 * covGradY0 + gradXAtYToPos * covGradY0
+                         + covGradX0 * gradYAtXToPos
+                         + gradXAtYToPos * gradYAtXToPos);
             lat->cells[pos]->setTxy(
-                2. / (it * dtau) / (it * dtau)
-                * (-1. / 4. * g * g * (E1 + Uy * E1p * UDy)
-                       * (E2 + Ux * E2p * UDx)
-                   + 1. / 4.
-                         * ((Ux * phiX * UDx - phi) * (Uy * phiY * UDy - phi)
-                            + Uy * (UxpY * phiXY * UDxpY - phiY) * UDy
-                                  * (Uy * phiY * UDy - phi)
-                            + (Ux * phiX * UDx - phi) * Ux
-                                  * (UypX * phiXY * UDypX - phiX) * UDx
-                            + Uy * (UxpY * phiXY * UDxpY - phiY) * UDy * Ux
-                                  * (UypX * phiXY * UDypX - phiX) * UDx))
-                      .trace()
-                      .real());
+                2. / (it * dtau) / (it * dtau) * chainA.trace().real());
 
             const complex<double> txetaElectricTrace =
                 su3::traceAB(E1, pi) + su3::traceABCD(E1, Ux, piX, UDx)
                 + su3::traceAB(E1p, piY)
                 + su3::traceABCD(E1p, UxpY, piXY, UDxpY);
+            chainA = xMinusSum0 * covGradY0 + xMinusSum1 * gradYAtX;
             lat->cells[pos]->setTxeta(
                 -2. / (it * dtau) / (it * dtau)
                 * (1. / 4. * g * txetaElectricTrace.real()
-                   + 1. / 8. / g
-                         * ((Ux * UypX * UDxpY * UDy - Uy * UxpY * UDypX * UDx
-                             - (Ux * UypX * UDxpY * UDy
-                                - Uy * UxpY * UDypX * UDx)
-                                       .trace()
-                                   / static_cast<double>(Nc) * one
-                             + Uy * UDxmXpY * UDymX * UxmX
-                             - UDxmX * UymX * UxmXpY * UDy
-                             - (Uy * UDxmXpY * UDymX * UxmX
-                                - UDxmX * UymX * UxmXpY * UDy)
-                                       .trace()
-                                   / static_cast<double>(Nc) * one)
-                                * (Uy * phiY * UDy - phi)
-                            + (UypX * UDxpY * UDy * Ux - UDx * Uy * UxpY * UDypX
-                               - (UypX * UDxpY * UDy * Ux
-                                  - UDx * Uy * UxpY * UDypX)
-                                         .trace()
-                                     / static_cast<double>(Nc) * one
-                               + UxpX * Uyp2X * UDxpXpY * UDypX
-                               - UypX * UxpXpY * UDyp2X * UDxpX
-                               - (UxpX * Uyp2X * UDxpXpY * UDypX
-                                  - UypX * UxpXpY * UDyp2X * UDxpX)
-                                         .trace()
-                                     / static_cast<double>(Nc) * one)
-                                  * (UypX * phiXY * UDypX - phiX))
-                               .trace()
-                               .imag()));
+                   - 1. / 8. / g * chainA.trace().imag()));
 
             const complex<double> tyetaElectricTrace =
                 su3::traceAB(E2, pi) + su3::traceABCD(E2, Uy, piY, UDy)
                 + su3::traceAB(E2p, piX)
                 + su3::traceABCD(E2p, UypX, piXY, UDypX);
+            chainA = yPlusSum0 * covGradX0 + yPlusSum1 * gradXAtY;
             lat->cells[pos]->setTyeta(
                 -2. / (it * dtau) / (it * dtau)
                 * (1. / 4. * g * tyetaElectricTrace.real()
-                   + 1. / 8. / g
-                         * ((Uy * UxpY * UDypX * UDx - Ux * UypX * UDxpY * UDy
-                             - (Uy * UxpY * UDypX * UDx
-                                - Ux * UypX * UDxpY * UDy)
-                                       .trace()
-                                   / static_cast<double>(Nc) * one
-                             + Ux * UDypXmY * UDxmY * UymY
-                             - UDymY * UxmY * UypXmY * UDx
-                             - (Ux * UDypXmY * UDxmY * UymY
-                                - UDymY * UxmY * UypXmY * UDx)
-                                       .trace()
-                                   / static_cast<double>(Nc) * one)
-                                * (Ux * phiX * UDx - phi)
-                            + (UxpY * UDypX * UDx * Uy - UDy * Ux * UypX * UDxpY
-                               - (UxpY * UDypX * UDx * Uy
-                                  - UDy * Ux * UypX * UDxpY)
-                                         .trace()
-                                     / static_cast<double>(Nc) * one
-                               + UypY * Uxp2Y * UDypXpY * UDxpY
-                               - UxpY * UypXpY * UDxp2Y * UDypY
-                               - (UypY * Uxp2Y * UDypXpY * UDxpY
-                                  - UxpY * UypXpY * UDxp2Y * UDypY)
-                                         .trace()
-                                     / static_cast<double>(Nc) * one)
-                                  * (UxpY * phiXY * UDxpY - phiY))
-                               .trace()
-                               .imag()));
+                   - 1. / 8. / g * chainA.trace().imag()));
 
             lat->cells[pos]->setTtaux(
                 lat->cells[pos]->getTtaux() * 1 / pow(a, 4.));
