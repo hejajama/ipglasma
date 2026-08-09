@@ -1948,19 +1948,35 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
         }
     };
 
+    // Reuse the bulk Gaussian buffers for every longitudinal sheet.  The
+    // linear ordering matches the historical pos-major/color-minor Gauss()
+    // call sequence exactly.
+    std::vector<double> gaussianField(
+        static_cast<std::size_t>(sites) * static_cast<std::size_t>(Nc2m1_));
+    std::vector<double> gaussianScratch;
+    gaussianScratch.reserve(3 * ((gaussianField.size() + 1) / 2));
+
+    auto fillColorCharge = [&](bool nucleusA) {
+        random->GaussBulk(gaussianField.data(), gaussianField.size(), gaussianScratch);
+#pragma omp parallel for
+        for (int pos = 0; pos < sites; ++pos) {
+            const double g2mu2 = nucleusA ? lat->cells[pos]->getg2mu2A()
+                                          : lat->cells[pos]->getg2mu2B();
+            const double scale = g * sqrt(g2mu2 * invNy);
+            const std::size_t base =
+                static_cast<std::size_t>(pos) * static_cast<std::size_t>(Nc2m1_);
+            for (int n = 0; n < Nc2m1_; ++n) {
+                rhoACoeff[n][pos] =
+                    scale * gaussianField[base + static_cast<std::size_t>(n)];
+            }
+        }
+    };
+
     // loop over longitudinal direction for nucleus A
     for (int k = 0; k < Ny; k++) {
         {
             IPG_PROFILE_SCOPE("initialization.wilson_random");
-            for (int pos = 0; pos < sites; pos++) {
-                // This factor is color independent.  Compute its square root
-                // once per site rather than once for each of eight colors.
-                const double g2muA =
-                    g * sqrt(lat->cells[pos]->getg2mu2A() * invNy);
-                for (int n = 0; n < Nc2m1_; n++) {
-                    rhoACoeff[n][pos] = g2muA * random->Gauss();
-                }
-            }
+            fillColorCharge(true);
         }
 
         for (int n = 0; n < Nc2m1_; n++) {
@@ -2003,13 +2019,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     for (int k = 0; k < Ny; k++) {
         {
             IPG_PROFILE_SCOPE("initialization.wilson_random");
-            for (int pos = 0; pos < sites; pos++) {
-                const double g2muB =
-                    g * sqrt(lat->cells[pos]->getg2mu2B() * invNy);
-                for (int n = 0; n < Nc2m1_; n++) {
-                    rhoACoeff[n][pos] = g2muB * random->Gauss();
-                }
-            }
+            fillColorCharge(false);
         }
 
         for (int n = 0; n < Nc2m1_; n++) {

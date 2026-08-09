@@ -203,6 +203,67 @@ double Random::Gauss(double mean, double width) {
     }
 }
 
+
+void Random::GaussBulk(
+    double *out, std::size_t count, std::vector<double> &scratch) {
+    if (count == 0) return;
+
+    // Preserve the exact scalar Gauss() stream, including the cached partner
+    // in gset/iset, while moving the expensive log/sqrt work off the serial
+    // Mersenne-Twister state machine.  Accepted polar Box-Muller pairs are
+    // generated serially in exactly the same order as repeated Gauss() calls;
+    // their independent transforms are evaluated in parallel afterwards.
+    std::size_t outOffset = 0;
+    if (iset != 0) {
+        out[outOffset++] = gset;
+        iset = 0;
+        if (outOffset == count) return;
+    }
+
+    const std::size_t remaining = count - outOffset;
+    const std::size_t pairCount = (remaining + 1) / 2;
+    scratch.resize(3 * pairCount);
+
+    for (std::size_t pair = 0; pair < pairCount; ++pair) {
+        double v1, v2, rsq;
+        do {
+            v1 = 2.0 * genrand64_real3() - 1.0;
+            v2 = 2.0 * genrand64_real3() - 1.0;
+            rsq = v1 * v1 + v2 * v2;
+        } while (rsq > 1. || rsq == 0.);
+
+        const std::size_t base = 3 * pair;
+        scratch[base] = v1;
+        scratch[base + 1] = v2;
+        scratch[base + 2] = rsq;
+    }
+
+    const std::size_t fullPairs = remaining / 2;
+#pragma omp parallel for
+    for (std::size_t pair = 0; pair < fullPairs; ++pair) {
+        const std::size_t base = 3 * pair;
+        const double v1 = scratch[base];
+        const double v2 = scratch[base + 1];
+        const double rsq = scratch[base + 2];
+        const double fac = sqrt(-2.0 * log(rsq) / rsq);
+        const std::size_t outBase = outOffset + 2 * pair;
+        out[outBase] = v2 * fac;
+        out[outBase + 1] = v1 * fac;
+    }
+
+    if ((remaining & 1U) != 0U) {
+        const std::size_t pair = pairCount - 1;
+        const std::size_t base = 3 * pair;
+        const double v1 = scratch[base];
+        const double v2 = scratch[base + 1];
+        const double rsq = scratch[base + 2];
+        const double fac = sqrt(-2.0 * log(rsq) / rsq);
+        out[count - 1] = v2 * fac;
+        gset = v1 * fac;
+        iset = 1;
+    }
+}
+
 void Random::gslRandomInit(unsigned long long seed) {
     gsl_rng_set(gslRandom, seed);
 }
