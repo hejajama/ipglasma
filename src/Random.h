@@ -18,10 +18,13 @@ class Random {
     double gset;
 
     unsigned long long mt[NN];
+    std::vector<unsigned long long> bulkRawScratch_;
     /* mti==NN+1 means mt[NN] is not initialized */
     int mti;
 
     gsl_rng *gslRandom;
+
+    void genrand64RawBulk(unsigned long long *out, std::size_t count);
 
   public:
     Random() {

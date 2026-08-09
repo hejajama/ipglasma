@@ -1954,20 +1954,39 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     std::vector<double> gaussianField(
         static_cast<std::size_t>(sites) * static_cast<std::size_t>(Nc2m1_));
     std::vector<double> gaussianScratch;
-    gaussianScratch.reserve(3 * ((gaussianField.size() + 1) / 2));
+    gaussianScratch.reserve(5 * ((gaussianField.size() + 1) / 2));
 
-    auto fillColorCharge = [&](bool nucleusA) {
-        random->GaussBulk(gaussianField.data(), gaussianField.size(), gaussianScratch);
+    // g2mu2 and Ny are fixed throughout Wilson-line construction.  Cache the
+    // color-independent site scale once for each nucleus instead of repeating
+    // the same sqrt in every longitudinal sheet.
+    std::vector<double> colorChargeScaleA(static_cast<std::size_t>(sites));
+    std::vector<double> colorChargeScaleB(static_cast<std::size_t>(sites));
 #pragma omp parallel for
-        for (int pos = 0; pos < sites; ++pos) {
-            const double g2mu2 = nucleusA ? lat->cells[pos]->getg2mu2A()
-                                          : lat->cells[pos]->getg2mu2B();
-            const double scale = g * sqrt(g2mu2 * invNy);
-            const std::size_t base =
-                static_cast<std::size_t>(pos) * static_cast<std::size_t>(Nc2m1_);
-            for (int n = 0; n < Nc2m1_; ++n) {
-                rhoACoeff[n][pos] =
-                    scale * gaussianField[base + static_cast<std::size_t>(n)];
+    for (int pos = 0; pos < sites; ++pos) {
+        colorChargeScaleA[static_cast<std::size_t>(pos)] =
+            g * sqrt(lat->cells[pos]->getg2mu2A() * invNy);
+        colorChargeScaleB[static_cast<std::size_t>(pos)] =
+            g * sqrt(lat->cells[pos]->getg2mu2B() * invNy);
+    }
+
+    auto fillColorCharge = [&](const std::vector<double> &scale) {
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random.gauss");
+            random->GaussBulk(
+                gaussianField.data(), gaussianField.size(), gaussianScratch);
+        }
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random.scale");
+#pragma omp parallel for
+            for (int pos = 0; pos < sites; ++pos) {
+                const double localScale = scale[static_cast<std::size_t>(pos)];
+                const std::size_t base = static_cast<std::size_t>(pos)
+                                         * static_cast<std::size_t>(Nc2m1_);
+                for (int n = 0; n < Nc2m1_; ++n) {
+                    rhoACoeff[n][pos] =
+                        localScale
+                        * gaussianField[base + static_cast<std::size_t>(n)];
+                }
             }
         }
     };
@@ -1976,7 +1995,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     for (int k = 0; k < Ny; k++) {
         {
             IPG_PROFILE_SCOPE("initialization.wilson_random");
-            fillColorCharge(true);
+            fillColorCharge(colorChargeScaleA);
         }
 
         for (int n = 0; n < Nc2m1_; n++) {
@@ -2019,7 +2038,7 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
     for (int k = 0; k < Ny; k++) {
         {
             IPG_PROFILE_SCOPE("initialization.wilson_random");
-            fillColorCharge(false);
+            fillColorCharge(colorChargeScaleB);
         }
 
         for (int n = 0; n < Nc2m1_; n++) {
