@@ -127,7 +127,8 @@ class Init {
     void recenter_nucleus(
         std::vector<double> &x, std::vector<double> &y, std::vector<double> &z);
     void recenter_nucleus(std::vector<ReturnValue> &nucleus);
-    void assignProtons(std::vector<ReturnValue> &nucleus, const int Z);
+    void assignProtons(
+        Random *random, std::vector<ReturnValue> &nucleus, const int Z);
     void rotate_nucleus(Random *random, std::vector<ReturnValue> &nucleus);
     void rotate_nucleus(
         double phi_global, double theta_global,
