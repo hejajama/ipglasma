@@ -25,6 +25,7 @@ import subprocess
 import os
 import argparse
 import numpy as np
+import tempfile
 import matplotlib.pyplot as plt
 subprocess.run("rm Initial_x_*", shell=True)
 subprocess.run("rm JIMWLKSnapshot_x_*", shell=True)
@@ -42,6 +43,31 @@ reference_cross_section_file = "validation_spectra"
 
 
 plot_ids = [1,5]
+
+def generate_temp_input(source_input_file="input_vm_proton", seed=0, x_pom="0.001705"):
+    with open(source_input_file, "r") as f:
+        lines = f.readlines()
+
+    temp_fd, temp_path = tempfile.mkstemp(prefix="input_vm_proton_", suffix=".in", dir=".")
+    os.close(temp_fd)
+
+    with open(temp_path, "w") as f:
+        for line in lines:
+            if line.lstrip().startswith("seed"):
+                f.write(f"seed {seed}\n")
+            elif line.lstrip().startswith("x_projectile_jimwlk"):
+                f.write(f"x_projectile_jimwlk {x_pom}\n")
+            elif line.lstrip().startswith("x_target_jimwlk"):
+                f.write(f"x_target_jimwlk {x_pom}\n")
+            else:
+                f.write(line)
+
+    return temp_path
+
+
+def remove_temp_input(temp_input_path):
+    if temp_input_path and os.path.exists(temp_input_path):
+        os.remove(temp_input_path)
 
 
 
@@ -116,24 +142,16 @@ for s in range(0, maxseed):
     print("===== RUNNING SEED ", s, " =====")
 
     #### Update config file
-    with open("input_vm_proton", "r") as f:
-        lines = f.readlines()
+    temp_input_path = generate_temp_input(seed=s, x_pom=xpom)
 
-    with open("input_vm_proton", "w") as f:
-        for line in lines:
-            if line.lstrip().startswith("seed"):
-                f.write(f"seed {s}\n")
-            elif line.lstrip().startswith("x_projectile_jimwlk"):
-                f.write(f"x_projectile_jimwlk {xpom}\n")
-            elif line.lstrip().startswith("x_target_jimwlk"):
-                f.write(f"x_target_jimwlk {xpom}\n")
-            else:
-                f.write(line)
+    with open(temp_input_path, "r") as f:
+        lines = f.readlines()
 
             
 
-    subprocess.run(f"{ipglasma_cmd} input_vm_proton >> {datadir}/ipglasma_log", shell=True)
+    subprocess.run(f"{ipglasma_cmd} {temp_input_path} >> {datadir}/ipglasma_log", shell=True)
 
+    remove_temp_input(temp_input_path)
 
 
     id1 = 2 * s +1

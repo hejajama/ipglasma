@@ -57,7 +57,7 @@ runWithLocalQs 0
 runWithkt 0
 Ny 50
 useSeedList 0
-seed 2
+seed 199
 useTimeForSeed 1
 Projectile p
 Target p
