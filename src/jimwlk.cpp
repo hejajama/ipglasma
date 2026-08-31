@@ -296,13 +296,13 @@ void JIMWLK::evolutionStep() {
         *VxsiVx_[i] = zero_;
         *VxsiVy_[i] = zero_;
         for (int a = 0; a < Nc2m1_; a++) {
-            Matrix Uconj = lat_ptr_->cells[i]->getU();
+            Matrix Uconj = lat_ptr_->U[i];
             Uconj.conjg();
-            *VxsiVx_[i] = (*VxsiVx_[i])
-                          + xi2_[i][a] * lat_ptr_->cells[i]->getU()
-                                * group_ptr_->getT(a) * Uconj;
+            *VxsiVx_[i] =
+                (*VxsiVx_[i])
+                + xi2_[i][a] * lat_ptr_->U[i] * group_ptr_->getT(a) * Uconj;
             *VxsiVy_[i] = (*VxsiVy_[i])
-                          + xi2_[i][a + Nc2m1_] * lat_ptr_->cells[i]->getU()
+                          + xi2_[i][a + Nc2m1_] * lat_ptr_->U[i]
                                 * group_ptr_->getT(a) * Uconj;
         }
     }
@@ -328,8 +328,7 @@ void JIMWLK::evolutionStep() {
             right = right + real(CKxi_[i][a]) * group_ptr_->getT(a);
         }
         right = I * ds_sqrt * right;
-        lat_ptr_->cells[i]->setU(
-            left.expm() * lat_ptr_->cells[i]->getU() * right.expm());
+        lat_ptr_->U[i] = left.expm() * lat_ptr_->U[i] * right.expm();
     }
 }
 
@@ -366,13 +365,13 @@ void JIMWLK::evolutionStep2() {
         *VxsiVx_[i] = zero_;
         *VxsiVy_[i] = zero_;
         for (int a = 0; a < Nc2m1_; a++) {
-            Matrix Uconj = lat_ptr_->cells[i]->getU2();
+            Matrix Uconj = lat_ptr_->U2[i];
             Uconj.conjg();
-            *VxsiVx_[i] = (*VxsiVx_[i])
-                          + xi2_[i][a] * lat_ptr_->cells[i]->getU2()
-                                * group_ptr_->getT(a) * Uconj;
+            *VxsiVx_[i] =
+                (*VxsiVx_[i])
+                + xi2_[i][a] * lat_ptr_->U2[i] * group_ptr_->getT(a) * Uconj;
             *VxsiVy_[i] = (*VxsiVy_[i])
-                          + xi2_[i][a + Nc2m1_] * lat_ptr_->cells[i]->getU2()
+                          + xi2_[i][a + Nc2m1_] * lat_ptr_->U2[i]
                                 * group_ptr_->getT(a) * Uconj;
         }
     }
@@ -398,7 +397,6 @@ void JIMWLK::evolutionStep2() {
             right = right + real(CKxi_[i][a]) * group_ptr_->getT(a);
         }
         right = I * ds_sqrt * right;
-        lat_ptr_->cells[i]->setU2(
-            left.expm() * lat_ptr_->cells[i]->getU2() * right.expm());
+        lat_ptr_->U2[i] = left.expm() * lat_ptr_->U2[i] * right.expm();
     }
 }

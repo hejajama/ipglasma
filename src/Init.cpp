@@ -3,13 +3,19 @@
 
 #include "Init.h"
 
+#include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "Instrumentation.h"
 #include "Phys_consts.h"
 #include "gsl/gsl_linalg.h"
 
@@ -21,6 +27,54 @@ using std::ifstream;
 using std::ofstream;
 using std::string;
 using std::stringstream;
+
+namespace {
+
+// SplitMix64 finalizer/counter step.  This is used only to construct a
+// deterministic, stateless retry stream for the forward-light-cone solver.
+inline std::uint64_t splitmix64(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+inline std::uint64_t forwardLightconeRetrySeed(
+    std::uint64_t runSeed, int eventId, int pos, int direction) {
+    std::uint64_t key = splitmix64(runSeed);
+    key = splitmix64(
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(eventId))
+           + 0xD1B54A32D192ED03ULL));
+    key = splitmix64(
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(pos))
+           + 0x94D049BB133111EBULL));
+    key = splitmix64(
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(direction))
+           + 0xBF58476D1CE4E5B9ULL));
+    return key;
+}
+
+inline double deterministicRetryGaussian(
+    std::uint64_t seed, std::uint64_t drawIndex) {
+    // Build two open-interval uniform doubles from independent SplitMix64
+    // counters, then use Box-Muller.  No shared RNG state is touched.
+    const std::uint64_t counter = 2ULL * drawIndex;
+    const std::uint64_t r1 =
+        splitmix64(seed + 0x9E3779B97F4A7C15ULL * (counter + 1ULL));
+    const std::uint64_t r2 =
+        splitmix64(seed + 0x9E3779B97F4A7C15ULL * (counter + 2ULL));
+
+    constexpr double invTwo53 = 1.0 / 9007199254740992.0;
+    const double u1 = (static_cast<double>(r1 >> 11) + 0.5) * invTwo53;
+    const double u2 = (static_cast<double>(r2 >> 11) + 0.5) * invTwo53;
+    constexpr double twoPi = 6.283185307179586476925286766559;
+    return std::sqrt(-2.0 * std::log(u1)) * std::cos(twoPi * u2);
+}
+
+}  // namespace
 
 //**************************************************************************
 // Init class.
@@ -62,13 +116,22 @@ void Init::solveAxb(double *Jab, double *Fa, std::vector<double> &xvec) {
     gsl_vector_free(x);
 }
 
-// This function samples the nucleon positions inside the projectile and
-// target nuclei. Both nuclei are centered at the origin.
 void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
-    messager.info("Sampling nucleon positions ... ");
+    IPG_PROFILE_SCOPE("initialization.sample_nuclei");
     ReturnValue rv, rv2;
+    messager.info("Sampling nucleon positions ... ");
 
     if (param->getNucleonPositionsFromFile() == 0) {
+        int A1, A2, Z1, Z2;
+        A1 = static_cast<int>(glauber->nucleusA1())
+             * param->getAverageOverNuclei();  // projectile
+        A2 = static_cast<int>(glauber->nucleusA2())
+             * param->getAverageOverNuclei();  // target
+        Z1 = static_cast<int>(glauber->nucleusZ1())
+             * param->getAverageOverNuclei();  // projectile
+        Z2 = static_cast<int>(glauber->nucleusZ2())
+             * param->getAverageOverNuclei();  // target
+
         if (param->getAverageOverNuclei() > 1) {
             if ((glauber->nucleusA1() == 1 || glauber->nucleusA2() == 1)) {
                 cerr << "Averaging not supported for collisions involving "
@@ -78,11 +141,6 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 exit(1);
             }
         }
-
-        int A1 = glauber->nucleusA1();  // projectile
-        int A2 = glauber->nucleusA2();  // target
-        int Z1 = glauber->nucleusZ1();  // projectile
-        int Z2 = glauber->nucleusZ2();  // target
 
         if (A1 == 1) {
             rv.x = 0.;
@@ -107,6 +165,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             rv.x = -rv.x;
             rv.y = -rv.y;
             rv.z = -rv.z;
+            rv.proton = 0;
             rv.collided = 0;
             nucleusA_.push_back(rv);
         } else {
@@ -175,9 +234,14 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 rv.y = nucleonPosArrA_[nucleusNumber][3 * iA + 1];
                 rv.z = nucleonPosArrA_[nucleusNumber][3 * iA + 2];
                 rv.collided = 0;
+                if (iA % 2 == 0) {
+                    rv.proton = 0;
+                } else {
+                    rv.proton = 1;
+                }
                 nucleusA_.push_back(rv);
             }
-            assignProtons(nucleusA_, glauber->nucleusZ1());
+            assignProtons(random, nucleusA_, glauber->nucleusZ1());
             recenter_nucleus(nucleusA_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -185,7 +249,6 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                      << " is not available, generate the nucleus configuration "
                      << "using Woods-Saxon distribution instead.";
             messager.flush("info");
-
             generate_nucleus_configuration(
                 random, glauber->nucleusA1(), glauber->nucleusZ1(),
                 glauber->GlauberData.Projectile.a_WS,
@@ -210,9 +273,14 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
                 rv.y = nucleonPosArrB_[nucleusNumber][3 * iA + 1];
                 rv.z = nucleonPosArrB_[nucleusNumber][3 * iA + 2];
                 rv.collided = 0;
+                if (iA % 2 == 0) {
+                    rv.proton = 0;
+                } else {
+                    rv.proton = 1;
+                }
                 nucleusB_.push_back(rv);
             }
-            assignProtons(nucleusB_, glauber->nucleusZ2());
+            assignProtons(random, nucleusB_, glauber->nucleusZ2());
             recenter_nucleus(nucleusB_);
         } else {
             // no configurations, sample with Woods-Saxon
@@ -285,7 +353,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
             exit(1);
         }
 
-        cout << "Reading nucleon positions for nuceus A from file " << fileName
+        cout << "Reading nucleon positions for nucleus A from file " << fileName
              << " ... " << endl;
 
         // sample the position in the file
@@ -377,7 +445,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 
         // go to the correct line in the file
         fin.seekg(std::ios::beg);
-        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA1(); ++i) {
+        for (int i = 0; i < (nucleusNumber)*glauber->nucleusA2(); ++i) {
             fin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
         // am now at the correct line in the file
@@ -408,6 +476,11 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
         }
 
         fin.close();
+
+        // The files provide only coordinates.
+        // Assign proton/neutron labels
+        assignProtons(random, nucleusA_, glauber->nucleusZ1());
+        assignProtons(random, nucleusB_, glauber->nucleusZ2());
 
         param->setA1FromFile(A);
         param->setA2FromFile(A2);
@@ -450,6 +523,7 @@ void Init::sampleTA(Parameters *param, Random *random, Glauber *glauber) {
 }
 
 void Init::readNuclearQs(Parameters *param) {
+    IPG_PROFILE_SCOPE("initialization.read_qs_table");
     // steps in qs0 and Y in the file
     // double y[iymaxNuc];
     // double qs0[ibmax];
@@ -610,8 +684,6 @@ void Init::readInNucleusConfigs(
         } else if (lightNucleusOption == 5) {
             fileName = "Ne20_NLEFT_dmin0.5fm_negativeweights.bin.in";
         }
-    } else if (nucleusA == 22) {
-        fileName = "Ne22_NLEFT.bin.in";
     } else if (nucleusA == 40) {
         fileName = "Ar40_VMC.bin.in";
         if (lightNucleusOption == 4) fileName = "Ar40_NLEFT.bin.in";
@@ -625,11 +697,6 @@ void Init::readInNucleusConfigs(
 
     if (!readFlag) return;
 
-    int Nentry = 3;
-    if (nucleusA == 197 || nucleusA == 208) {
-        Nentry = 4;
-    }
-
     fileName = path + fileName;
     messager << "read in nucleus configurations from " << fileName;
     messager.flush("info");
@@ -637,7 +704,7 @@ void Init::readInNucleusConfigs(
     while (true) {
         vector<float> tempPos;
         for (int i = 0; i < nucleusA; i++) {
-            for (int j = 0; j < Nentry; j++) {
+            for (int j = 0; j < 3; j++) {
                 float temp;
                 inFile.read(reinterpret_cast<char *>(&temp), sizeof(float));
                 tempPos.push_back(temp);
@@ -664,20 +731,14 @@ void Init::samplePartonPositions(
     const int Nq = sampleNumberOfPartons(random, param);
     const double dq_min = param->getDqmin();  // fm
     const double dq_min_sq = dq_min * dq_min;
-    const double omega = param->getOmega();
 
     vector<double> r_array(Nq, 0.);
-    BGq_array.resize(Nq, BGq);
+    BGq_array.assign(Nq, BGq);
     for (int iq = 0; iq < Nq; iq++) {
-        if (std::abs(omega - 1) < 1e-8) {
-            double xq = sqrtBG * random->Gauss();
-            double yq = sqrtBG * random->Gauss();
-            double zq = sqrtBG * random->Gauss();
-            r_array[iq] = sqrt(xq * xq + yq * yq + zq * zq);
-        } else {
-            double bperp = sqrtBG * sqrt(omega * random->sampleGammaInc());
-            r_array[iq] = bperp;  // bperp in 2D (asuume z = 0)
-        }
+        double xq = sqrtBG * random->Gauss();
+        double yq = sqrtBG * random->Gauss();
+        double zq = sqrtBG * random->Gauss();
+        r_array[iq] = sqrt(xq * xq + yq * yq + zq * zq);
     }
     std::sort(r_array.begin(), r_array.end());
 
@@ -694,15 +755,9 @@ void Init::samplePartonPositions(
             reject_flag = 0;
             double phi = 2. * M_PI * random->genrand64_real2();
             double theta = acos(1. - 2. * random->genrand64_real2());
-            if (std::abs(omega - 1) < 1e-8) {
-                x_i = r_i * sin(theta) * cos(phi);
-                y_i = r_i * sin(theta) * sin(phi);
-                z_i = r_i * cos(theta);
-            } else {
-                x_i = r_i * cos(phi);
-                y_i = r_i * sin(phi);
-                z_i = 0.;  // assume z=0
-            }
+            x_i = r_i * sin(theta) * cos(phi);
+            y_i = r_i * sin(theta) * sin(phi);
+            z_i = r_i * cos(theta);
             for (int j = i - 1; j >= 0; j--) {
                 if ((r_i - r_array[j]) * (r_i - r_array[j]) > dq_min_sq) break;
                 double dsq =
@@ -739,8 +794,8 @@ void Init::samplePartonPositions(
     }
 }
 
-// Q_s as a function of \sum T_p and y (new in this version of the code -
-// v1.2 and up)
+// Q_s as a function of \sum T_p and y (new in this version of the code - v1.2
+// and up)
 double Init::getNuclearQs2(double T, double y) {
     double value, fracy, fracT, QsYdown, QsYup;
     int posy, check = 0;
@@ -748,8 +803,7 @@ double Init::getNuclearQs2(double T, double y) {
     posy = static_cast<int>(floor(y / deltaYNuc + 0.0000001));
 
     if (y > iymaxNuc * deltaYNuc) {
-        cout << " [Init:getNuclearQs2]:ERROR: y out of range. Maximum y "
-                "value "
+        cout << " [Init:getNuclearQs2]:ERROR: y out of range. Maximum y value "
                 "is "
              << iymaxNuc * deltaYNuc << ", you used " << y << ". Exiting."
              << endl;
@@ -760,8 +814,7 @@ double Init::getNuclearQs2(double T, double y) {
     if (T > Tlist[iTpmax - 1]) {
         cerr << "T=" << T << ", maximal T in table=" << Tlist[iTpmax - 1]
              << endl;
-        cerr << " [Init:getNuclearQs2]:WARNING: out of range. Using "
-                "maximal T "
+        cerr << " [Init:getNuclearQs2]:WARNING: out of range. Using maximal T "
                 "in "
                 "table."
              << endl;
@@ -808,57 +861,66 @@ double Init::getNuclearQs2(double T, double y) {
     return value;
 }
 
-// set g^2\mu^2 as the sum of the individual nucleons' g^2\mu^2, using
-// Q_s(b,y) prop to g^mu(b,y) Also compute N_part using Glauber If
-// param->getwhich_stage() == 2, then here we shift nuclei back to b=0 for
-// JIMLWK evolution (to be shifted back to b after JIMLWK in readV2())
+// set g^2\mu^2 as the sum of the individual nucleons' g^2\mu^2, using Q_s(b,y)
+// prop tp g^mu(b,y) also compute N_part using Glauber
 void Init::setColorChargeDensity(
     Lattice *lat, Parameters *param, Random *random, Glauber *glauber) {
-    messager.info("set color charge density ...");
-
-    const int N = param->getSize();
-    const double L = param->getL();
-    const double a = L / N;  // lattice spacing in fm
-
+    IPG_PROFILE_SCOPE("initialization.color_charge_density");
+    std::cout << "set color charge density ..." << std::endl;
+    int pos, posA, posB;
+    int N = param->getSize();
     const int A1 = nucleusA_.size();
     const int A2 = nucleusB_.size();
+    // int check=0;
+    // if (param->getNucleonPositionsFromFile() == 2) {
+    //  A1 = param->getA1FromFile();
+    //  A2 = param->getA2FromFile();
+    //} else {
+    //  A1 = static_cast<int>(glauber->nucleusA1()) *
+    //  param->getAverageOverNuclei(); A2 =
+    //  static_cast<int>(glauber->nucleusA2()) * param->getAverageOverNuclei();
+    //}
 
-    double rapidityA = 0.;
-    double rapidityB = 0.;
-    if (param->getUsePseudoRapidity() == 0) {
-        rapidityA = param->getRapidityA();
-        rapidityB = param->getRapidityB();
-    } else {
-        // when using pseudorapidity as input convert to rapidity here.
-        // later include Jacobian in multiplicity and energy
-        cout << "Using pseudorapidity " << param->getRapidityA() << ", "
-             << param->getRapidityB() << endl;
-        double m = param->getJacobianm();  // in GeV
-        double P =
-            0.13 + 0.32 * pow(param->getRoots() / 1000., 0.115);  // in GeV
-        rapidityA =
+    int Npart = 0;
+    int Ncoll = 0;
+    double g2mu2A, g2mu2B;
+    const double impact_b = param->getb();
+    double r;
+    double L = param->getL();
+    double P, m;
+    double rapidity;
+    if (param->getUsePseudoRapidity() == 0)
+        rapidity = param->getRapidity();
+    else {
+        // when using pseudorapidity as input convert to rapidity here. later
+        // include Jacobian in multiplicity and energy
+        cout << "Using pseudorapidity " << param->getRapidity() << endl;
+        m = param->getJacobianm();                                // in GeV
+        P = 0.13 + 0.32 * pow(param->getRoots() / 1000., 0.115);  // in GeV
+        rapidity =
             0.5
             * log(
-                sqrt(pow(cosh(param->getRapidityA()), 2.) + m * m / (P * P))
-                + sinh(param->getRapidityA())
+                sqrt(pow(cosh(param->getRapidity()), 2.) + m * m / (P * P))
+                + sinh(param->getRapidity())
                       / (sqrt(
-                             pow(cosh(param->getRapidityA()), 2.)
+                             pow(cosh(param->getRapidity()), 2.)
                              + m * m / (P * P))
-                         - sinh(param->getRapidityA())));
-        rapidityB =
-            0.5
-            * log(
-                sqrt(pow(cosh(param->getRapidityB()), 2.) + m * m / (P * P))
-                + sinh(param->getRapidityB())
-                      / (sqrt(
-                             pow(cosh(param->getRapidityB()), 2.)
-                             + m * m / (P * P))
-                         - sinh(param->getRapidityB())));
-        cout << "Corresponds to rapidity " << rapidityA << ", " << rapidityB
-             << endl;
+                         - sinh(param->getRapidity())));
+        cout << "Corresponds to rapidity " << rapidity << endl;
     }
 
-    double nucleiInAverage = static_cast<double>(param->getAverageOverNuclei());
+    double yIn = rapidity;  // param->getRapidity();
+    double a = L / N;       // lattice spacing in fm
+    double dx, dy, dij;
+    double d2 = param->getSigmaNN() / (M_PI * 10.);  // in fm^2
+    double averageQs = 0.;
+    double averageQs2 = 0.;
+    double averageQs2Avg = 0.;
+    double averageQs2min = 0.;
+    double averageQs2min2 = 0.;
+    int count = 0;
+    double nucleiInAverage;
+    nucleiInAverage = static_cast<double>(param->getAverageOverNuclei());
 
     param->setQsmuRatioB(param->getQsmuRatio());
 
@@ -904,12 +966,36 @@ void Init::setColorChargeDensity(
     }
 
 #pragma omp parallel for
-    for (int ipos = 0; ipos < N * N; ipos++) {
-        lat->cells[ipos]->setg2mu2A(0.);
-        lat->cells[ipos]->setg2mu2B(0.);
+    for (int ix = 0; ix < N; ix++)  // loop over all positions
+    {
+        for (int iy = 0; iy < N; iy++) {
+            int localpos = ix * N + iy;
+            lat->cells[localpos]->setg2mu2A(0.);
+            lat->cells[localpos]->setg2mu2B(0.);
+        }
+    }
+
+    // compute N_part
+    // positions are shifted here. not later as in previous versions. bshift
+    // below (in init(..)) is zero.
+
+    double phiRP = 0.;
+    if (param->getRotateReactionPlane()) {
+        phiRP = 2 * M_PI * random->genrand64_real2();
+    }
+    for (unsigned int i = 0; i < nucleusA_.size(); i++) {
+        // shift the nuclei's position by -b/2 or +b/2 respectively
+        nucleusA_.at(i).x -= impact_b / 2. * cos(phiRP);
+        nucleusA_.at(i).y -= impact_b / 2. * sin(phiRP);
+    }
+    for (unsigned int i = 0; i < nucleusB_.size(); i++) {
+        // shift the nuclei's position by -b/2 or +b/2 respectively
+        nucleusB_.at(i).x += impact_b / 2. * cos(phiRP);
+        nucleusB_.at(i).y += impact_b / 2. * sin(phiRP);
     }
 
     double xi = param->getProtonAnisotropy();
+
     if (xi != 0.) {
         for (int i = 0; i < A1; i++) {
             nucleusA_.at(i).phi = 2 * M_PI * random->genrand64_real2();
@@ -929,52 +1015,47 @@ void Init::setColorChargeDensity(
     }
 
     const int NqFlag = param->getUseConstituentQuarkProton();
+    vector<vector<double>> xq1, xq2, yq1, yq2, BGq1, BGq2, gauss1, gauss2;
     vector<double> x_array, y_array, z_array, BGq_array, gauss_array;
-    xq1.clear();
-    xq2.clear();
-    yq1.clear();
-    yq2.clear();
-    BGq1.clear();
-    BGq2.clear();
-    gauss1.clear();
-    gauss2.clear();
+
     for (int i = 0; i < A1; i++) {
-        int Npartons = 1;
+        x_array.clear();
         if (NqFlag > 0) {
             samplePartonPositions(
                 param, random, x_array, y_array, z_array, BGq_array);
             // if (param->getShiftConstituentQuarkProtonOrigin())
             // Move center of mass to the origin
-            // Note that 1607.01711 this is not done, so parameters quoted
-            // in that paper can't be used if this is done
+            // Note that 1607.01711 this is not done, so parameters quoted in
+            // that paper can't be used if this is done
             xq1.push_back(x_array);
             yq1.push_back(y_array);
             BGq1.push_back(BGq_array);
-            Npartons = std::max(1, static_cast<int>(x_array.size()));
         }
+        int Npartons = std::max(1, static_cast<int>(x_array.size()));
         sampleQsNormalization(random, param, Npartons, gauss_array);
         gauss1.push_back(gauss_array);
     }
 
     for (int i = 0; i < A2; i++) {
-        int Npartons = 1;
+        x_array.clear();
         if (NqFlag > 0) {
             samplePartonPositions(
                 param, random, x_array, y_array, z_array, BGq_array);
             xq2.push_back(x_array);
             yq2.push_back(y_array);
             BGq2.push_back(BGq_array);
-            Npartons = std::max(1, static_cast<int>(x_array.size()));
         }
+        int Npartons = std::max(1, static_cast<int>(x_array.size()));
         sampleQsNormalization(random, param, Npartons, gauss_array);
         gauss2.push_back(gauss_array);
     }
 
-    // test what a smooth Woods-Saxon would give
+    // test what a smmoth Woods-Saxon would give
     if (param->getUseSmoothNucleus() == 1) {
         cout << "Using smooth nucleus for test purposes. Does not include "
                 "deformation."
              << endl;
+        Npart = 2;  // avoid break below
         double xA, xB;
         double y;
         double T;
@@ -982,7 +1063,6 @@ void Init::setColorChargeDensity(
         double normA = 0.;
         double normB = 0.;
         double bb = param->getb();
-        double r = 0.;
         for (int ix = 0; ix < N; ix++)  // loop over all positions
         {
             xA = -L / 2. + a * ix - bb / 2.;
@@ -1039,277 +1119,1539 @@ void Init::setColorChargeDensity(
         // cout << "normTest=" << normTest << endl;
         param->setSuccess(1);
     } else {
-        // Non-smooth nucleus add all T_p's (new in version 1.2)
+        // add all T_p's (new in version 1.2)
+#pragma omp parallel
+        {
+            double x, xm;
+            double y, ym;
+            int localpos;
+            double bp2, T, phi;
 
-#pragma omp parallel for
-        for (int ipos = 0; ipos < N * N; ipos++) {
-            // loop over all positions
-            int iy = ipos % N;
-            int ix = ipos / N;
-            double x = -L / 2. + a * ix;
-            double y = -L / 2. + a * iy;
+#pragma omp for
+            for (int ix = 0; ix < N; ix++)  // loop over all positions
+            {
+                x = -L / 2. + a * ix;
+                for (int iy = 0; iy < N; iy++) {
+                    y = -L / 2. + a * iy;
 
-            // nucleus A
-            lat->cells[ipos]->setTpA(0.);
-            for (int i = 0; i < A1; i++) {
-                double xm = nucleusA_.at(i).x;
-                double ym = nucleusA_.at(i).y;
+                    localpos = ix * N + iy;
 
-                double T = 0.;
-                double bp2 = 0.;
-                if (param->getUseConstituentQuarkProton() > 0) {
-                    for (unsigned int iq = 0; iq < xq1[i].size(); iq++) {
-                        bp2 = (xm + xq1[i][iq] - x) * (xm + xq1[i][iq] - x)
-                              + (ym + yq1[i][iq] - y) * (ym + yq1[i][iq] - y);
-                        bp2 /= hbarc * hbarc;
+                    // nucleus A
+                    lat->cells[localpos]->setTpA(0.);
+                    for (int i = 0; i < A1; i++) {
+                        xm = nucleusA_.at(i).x;
+                        ym = nucleusA_.at(i).y;
 
-                        T += exp(-bp2 / (2. * BGq1[i][iq]))
-                             / (2. * M_PI * BGq1[i][iq])
-                             / (static_cast<double>(xq1[i].size()))
-                             * gauss1[i][iq];  // I removed the 2/3 here
-                                               // to make it a bit bigger
+                        if (param->getUseConstituentQuarkProton() > 0) {
+                            T = 0.;
+                            for (unsigned int iq = 0; iq < xq1[i].size();
+                                 iq++) {
+                                bp2 = (xm + xq1[i][iq] - x)
+                                          * (xm + xq1[i][iq] - x)
+                                      + (ym + yq1[i][iq] - y)
+                                            * (ym + yq1[i][iq] - y);
+                                bp2 /= hbarc * hbarc;
+
+                                T +=
+                                    exp(-bp2 / (2. * BGq1[i][iq]))
+                                    / (2. * M_PI * BGq1[i][iq])
+                                    / (static_cast<double>(xq1[i].size()))
+                                    * gauss1[i][iq];  // I removed the 2/3 here
+                                                      // to make it a bit bigger
+                            }
+                        } else {
+                            const double BG = param->getBG();
+                            phi = nucleusA_.at(i).phi;
+
+                            bp2 = (xm - x) * (xm - x) + (ym - y) * (ym - y)
+                                  + xi
+                                        * pow(
+                                            (xm - x) * cos(phi)
+                                                + (ym - y) * sin(phi),
+                                            2.);
+                            bp2 /= hbarc * hbarc;
+                            T = sqrt(1 + xi) * exp(-bp2 / (2. * BG))
+                                / (2. * M_PI * BG)
+                                * gauss1[i][0];  // T_p in this cell for the
+                                                 // current nucleon
+                        }
+                        lat->cells[localpos]->setTpA(
+                            lat->cells[localpos]->getTpA()
+                            + T / nucleiInAverage);  // add up all T_p
                     }
-                } else {
-                    const double BG = param->getBG();
-                    double phi = nucleusA_.at(i).phi;
 
-                    bp2 = (xm - x) * (xm - x) + (ym - y) * (ym - y)
-                          + xi
-                                * pow(
-                                    (xm - x) * cos(phi) + (ym - y) * sin(phi),
-                                    2.);
-                    bp2 /= hbarc * hbarc;
-                    T = sqrt(1 + xi) * exp(-bp2 / (2. * BG)) / (2. * M_PI * BG)
-                        * gauss1[i][0];  // T_p in this cell for the
-                                         // current nucleon
-                }
-                lat->cells[ipos]->setTpA(
-                    lat->cells[ipos]->getTpA()
-                    + T / nucleiInAverage);  // add up all T_p
-            }
+                    // nucleus B
+                    lat->cells[localpos]->setTpB(0.);
+                    for (int i = 0; i < A2; i++) {
+                        xm = nucleusB_.at(i).x;
+                        ym = nucleusB_.at(i).y;
 
-            // nucleus B
-            lat->cells[ipos]->setTpB(0.);
-            for (int i = 0; i < A2; i++) {
-                double xm = nucleusB_.at(i).x;
-                double ym = nucleusB_.at(i).y;
+                        if (param->getUseConstituentQuarkProton() > 0) {
+                            T = 0.;
+                            for (unsigned int iq = 0; iq < xq2[i].size();
+                                 iq++) {
+                                bp2 = (xm + xq2[i][iq] - x)
+                                          * (xm + xq2[i][iq] - x)
+                                      + (ym + yq2[i][iq] - y)
+                                            * (ym + yq2[i][iq] - y);
+                                bp2 /= hbarc * hbarc;
 
-                double T = 0.;
-                double bp2 = 0.;
-                if (param->getUseConstituentQuarkProton() > 0) {
-                    T = 0.;
-                    for (unsigned int iq = 0; iq < xq2[i].size(); iq++) {
-                        bp2 = (xm + xq2[i][iq] - x) * (xm + xq2[i][iq] - x)
-                              + (ym + yq2[i][iq] - y) * (ym + yq2[i][iq] - y);
-                        bp2 /= hbarc * hbarc;
+                                T += exp(-bp2 / (2. * BGq2[i][iq]))
+                                     / (2. * M_PI * BGq2[i][iq])
+                                     / (static_cast<double>(xq2[i].size()))
+                                     * gauss2[i][iq];
+                            }
+                        } else {
+                            const double BG = param->getBG();
+                            phi = nucleusB_.at(i).phi;
 
-                        T += exp(-bp2 / (2. * BGq2[i][iq]))
-                             / (2. * M_PI * BGq2[i][iq])
-                             / (static_cast<double>(xq2[i].size()))
-                             * gauss2[i][iq];
+                            bp2 = (xm - x) * (xm - x) + (ym - y) * (ym - y)
+                                  + xi
+                                        * pow(
+                                            (xm - x) * cos(phi)
+                                                + (ym - y) * sin(phi),
+                                            2.);
+                            bp2 /= hbarc * hbarc;
+
+                            T = sqrt(1 + xi) * exp(-bp2 / (2. * BG))
+                                / (2. * M_PI * BG)
+                                * gauss2[i][0];  // T_p in this cell for the
+                                                 // current nucleon
+                        }
+
+                        lat->cells[localpos]->setTpB(
+                            lat->cells[localpos]->getTpB()
+                            + T / nucleiInAverage);  // add up all T_p
                     }
-                } else {
-                    const double BG = param->getBG();
-                    double phi = nucleusB_.at(i).phi;
-
-                    bp2 = (xm - x) * (xm - x) + (ym - y) * (ym - y)
-                          + xi
-                                * pow(
-                                    (xm - x) * cos(phi) + (ym - y) * sin(phi),
-                                    2.);
-                    bp2 /= hbarc * hbarc;
-
-                    T = sqrt(1 + xi) * exp(-bp2 / (2. * BG)) / (2. * M_PI * BG)
-                        * gauss2[i][0];  // T_p in this cell for the
-                                         // current nucleon
                 }
-
-                lat->cells[ipos]->setTpB(
-                    lat->cells[ipos]->getTpB()
-                    + T / nucleiInAverage);  // add up all T_p
             }
         }
     }
 
-// get Q_s^2 (and from that g^2mu^2) for a given \sum T_p and Y
-#pragma omp parallel for
-    for (int ipos = 0; ipos < N * N; ipos++) {
-        // loop over all positions
-        int ix = ipos / N;
-        int iy = ipos % N;
+    if (param->getUseSmoothNucleus() == 0) {
+        stringstream strNcoll_name;
+        strNcoll_name << "NcollList" << param->getEventId() << ".dat";
+        string Ncoll_name;
+        Ncoll_name = strNcoll_name.str();
 
-        double QsA = 1;
-        double QsB = 1;
-        int check = 0;
-        double distanceA = 0;
-        double distanceB = 0;
+        ofstream foutNcoll(Ncoll_name.c_str(), std::ios::out);
 
-        if (param->getUseSmoothNucleus() == 1) {
-            check = 2;
-        } else {
-            const double BG = param->getBG();
-
-            // cut proton at a radius of rmax [fm] (about twice the
-            // gluonic radius to be generous)
-
-            if (log(2 * M_PI * BG * lat->cells[ipos]->getTpA()) < 0.) {
-                if (isinf(log(2 * M_PI * BG * lat->cells[ipos]->getTpA())) == 1)
-                    distanceA = param->getRmax() + 1.;
-                else
-                    distanceA =
-                        sqrt(
-                            -2. * BG
-                            * log(2 * M_PI * BG * lat->cells[ipos]->getTpA()))
-                        * hbarc;
-                // cout << log(2 * M_PI * BG *
-                // lat->cells[ipos]->getTpA()) << endl;
-            } else {
-                distanceA = 0.;
-            }
-
-            if (log(2 * M_PI * BG * lat->cells[ipos]->getTpB()) < 0.) {
-                if (isinf(log(2 * M_PI * BG * lat->cells[ipos]->getTpB())) == 1)
-                    distanceB = param->getRmax() + 1.;
-                else
-                    distanceB =
-                        sqrt(
-                            -2. * BG
-                            * log(2 * M_PI * BG * lat->cells[ipos]->getTpB()))
-                        * hbarc;
-            } else
-                distanceB = 0.;
-
-            if (distanceA < param->getRmax()) {
-                check = 1;
-            }
-
-            if (distanceB < param->getRmax() && check == 1) {
-                check = 2;
-            }
-        }
-
-        if (param->getUseJIMWLK() == 1) {
-            // always assgin color charge density for whole lattice
-            check = 2;
-        }
-
-        double exponent = 5.6;  // see 1212.2974 Eq. (17)
-        double xVal = 0.;
-        if (check == 2) {
-            if (param->getUseFluctuatingx() == 1) {
-                double localrapidity = rapidityA;
-                double yIn = rapidityA;
-                double Ydeviation = 10000;
-                // iterative loops here to determine the fluctuating Y
-                while (abs(Ydeviation) > 0.001) {
-                    if (localrapidity >= 0) {
-                        QsA = sqrt(getNuclearQs2(
-                            lat->cells[ipos]->getTpA(), abs(localrapidity)));
-                    } else {
-                        xVal = QsA * param->getxFromThisFactorTimesQs()
-                               / param->getRoots() * exp(yIn);
-                        if (xVal == 0)
-                            QsA = 0.;
-                        else
-                            QsA = sqrt(getNuclearQs2(
-                                      lat->cells[ipos]->getTpA(), 0.))
-                                  * sqrt(
-                                      pow((1 - xVal) / (1 - 0.01), exponent)
-                                      * pow((0.01 / xVal), 0.2));
+        if (param->getGaussianWounding() == 0) {
+            for (int i = 0; i < A1; i++) {
+                for (int j = 0; j < A2; j++) {
+                    dx = nucleusB_.at(j).x - nucleusA_.at(i).x;
+                    dy = nucleusB_.at(j).y - nucleusA_.at(i).y;
+                    dij = dx * dx + dy * dy;
+                    if (dij < d2) {
+                        foutNcoll
+                            << (nucleusB_.at(j).x + nucleusA_.at(i).x) / 2.
+                            << " "
+                            << (nucleusB_.at(j).y + nucleusA_.at(i).y) / 2.
+                            << endl;
+                        Ncoll++;
+                        nucleusB_.at(j).collided = 1;
+                        nucleusA_.at(i).collided = 1;
                     }
-                    if (QsA == 0) {
-                        Ydeviation = 0;
-                        lat->cells[ipos]->setg2mu2A(0.);
+                }
+            }
+        } else {
+            double p;
+            double G = 0.92;
+            double ran;
+
+            for (int i = 0; i < A1; i++) {
+                for (int j = 0; j < A2; j++) {
+                    dx = nucleusB_.at(j).x - nucleusA_.at(i).x;
+                    dy = nucleusB_.at(j).y - nucleusA_.at(i).y;
+                    dij = dx * dx + dy * dy;
+
+                    p = G * exp(-G * dij / d2);  // Gaussian profile
+
+                    ran = random->genrand64_real1();
+
+                    if (ran < p) {
+                        foutNcoll
+                            << (nucleusB_.at(j).x + nucleusA_.at(i).x) / 2.
+                            << " "
+                            << (nucleusB_.at(j).y + nucleusA_.at(i).y) / 2.
+                            << endl;
+                        Ncoll++;
+                        nucleusB_.at(j).collided = 1;
+                        nucleusA_.at(i).collided = 1;
+                    }
+                }
+            }
+        }
+
+        foutNcoll.close();
+
+        stringstream strNpart_name;
+        strNpart_name << "NpartList" << param->getEventId() << ".dat";
+        string Npart_name;
+        Npart_name = strNpart_name.str();
+
+        ofstream foutNpart(Npart_name.c_str(), std::ios::out);
+
+        for (int i = 0; i < A1; i++) {
+            foutNpart << nucleusA_.at(i).x << " " << nucleusA_.at(i).y << " "
+                      << nucleusA_.at(i).proton << " "
+                      << nucleusA_.at(i).collided << endl;
+        }
+        foutNpart << endl;
+        for (int i = 0; i < A2; i++) {
+            foutNpart << nucleusB_.at(i).x << " " << nucleusB_.at(i).y << " "
+                      << nucleusB_.at(i).proton << " "
+                      << nucleusB_.at(i).collided << endl;
+        }
+        foutNpart.close();
+
+        // in p+p assume that they collided in any case
+        if (A1 == 1 && A2 == 1) {
+            nucleusB_.at(0).collided = 1;
+            nucleusA_.at(0).collided = 1;
+        }
+
+        Npart = 0;
+
+        for (int i = 0; i < A1; i++) {
+            if (nucleusA_.at(i).collided == 1) Npart++;
+        }
+
+        for (int i = 0; i < A2; i++) {
+            if (nucleusB_.at(i).collided == 1) Npart++;
+        }
+
+        param->setNpart(Npart);
+
+        if (param->getUseFixedNpart() != 0
+            && Npart != param->getUseFixedNpart()) {
+            cout << "current Npart = " << Npart << endl;
+            return;
+        }
+    }
+    // get Q_s^2 (and from that g^2mu^2) for a given \sum T_p and Y
+#pragma omp parallel
+    {
+        //    double x;
+        //    double y;
+        int localpos;
+        double Ydeviation = 10000;
+        double QsA, QsB, distanceA, distanceB;
+        double xVal;
+        double localrapidity = rapidity;
+        int check;
+        QsA = 1;
+        QsB = 1;
+
+#pragma omp for
+        for (int ix = 0; ix < N; ix++)  // loop over all positions
+        {
+            // x = -L/2.+a*ix;
+            for (int iy = 0; iy < N; iy++) {
+                Ydeviation = 10000;
+                check = 0;
+                // y = -L/2.+a*iy;
+                localpos = ix * N + iy;
+
+                if (param->getUseSmoothNucleus() == 1)
+                    check = 2;
+                else {
+                    const double BG = param->getBG();
+
+                    //    cut proton at a radius of rmax [fm] (about twice the
+                    //    gluonic
+                    // radius to be generous)
+
+                    if (log(2 * M_PI * BG * lat->cells[localpos]->getTpA())
+                        < 0.) {
+                        if (isinf(log(
+                                2 * M_PI * BG * lat->cells[localpos]->getTpA()))
+                            == 1)
+                            distanceA = param->getRmax() + 1.;
+                        else
+                            distanceA =
+                                sqrt(
+                                    -2. * BG
+                                    * log(
+                                        2 * M_PI * BG
+                                        * lat->cells[localpos]->getTpA()))
+                                * hbarc;
+                        // cout << log(2 * M_PI * BG *
+                        // lat->cells[localpos]->getTpA()) << endl;
+                    } else
+                        distanceA = 0.;
+
+                    if (log(2 * M_PI * BG * lat->cells[localpos]->getTpB())
+                        < 0.) {
+                        if (isinf(log(
+                                2 * M_PI * BG * lat->cells[localpos]->getTpB()))
+                            == 1)
+                            distanceB = param->getRmax() + 1.;
+                        else
+                            distanceB =
+                                sqrt(
+                                    -2. * BG
+                                    * log(
+                                        2 * M_PI * BG
+                                        * lat->cells[localpos]->getTpB()))
+                                * hbarc;
+                    } else
+                        distanceB = 0.;
+
+                    if (distanceA < param->getRmax()) {
+                        check = 1;
+                    }
+                    // else
+                    //   cout << "large: " << distanceA << " " << ix << " " <<
+                    //   iy << endl;
+
+                    if (distanceB < param->getRmax() && check == 1) {
+                        check = 2;
+                    }
+                }
+
+                double exponent = 5.6;  // see 1212.2974 Eq. (17)
+                if (check == 2) {
+                    if (param->getUseFluctuatingx() == 1) {
+                        // iterative loops here to determine the fluctuating Y
+                        // _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-
+                        while (std::abs(Ydeviation) > 0.001) {
+                            if (localrapidity >= 0) {
+                                QsA = sqrt(getNuclearQs2(
+                                    lat->cells[localpos]->getTpA(),
+                                    localrapidity));
+                            } else {
+                                xVal = QsA * param->getxFromThisFactorTimesQs()
+                                       / param->getRoots() * exp(yIn);
+                                if (xVal == 0)
+                                    QsA = 0.;
+                                else
+                                    QsA =
+                                        sqrt(getNuclearQs2(
+                                            lat->cells[localpos]->getTpA(), 0.))
+                                        * sqrt(
+                                            pow((1 - xVal) / (1 - 0.01),
+                                                exponent)
+                                            * pow((0.01 / xVal), 0.2));
+                            }
+                            if (QsA == 0) {
+                                Ydeviation = 0;
+                                lat->cells[localpos]->setg2mu2A(0.);
+                            } else {
+                                // nucleus A
+                                lat->cells[localpos]->setg2mu2A(
+                                    QsA * QsA / param->getQsmuRatio()
+                                    / param->getQsmuRatio() * a * a / hbarc
+                                    / hbarc / param->getg()
+                                    / param->getg());  // lattice units? check
+
+                                Ydeviation =
+                                    localrapidity
+                                    - log(
+                                        0.01
+                                        / (QsA
+                                           * param->getxFromThisFactorTimesQs()
+                                           / param->getRoots() * exp(yIn)));
+                                localrapidity = log(
+                                    0.01
+                                    / (QsA * param->getxFromThisFactorTimesQs()
+                                       / param->getRoots() * exp(yIn)));
+                            }
+                        }
+                        if (lat->cells[localpos]->getg2mu2A()
+                            != lat->cells[localpos]->getg2mu2A()) {
+                            lat->cells[localpos]->setg2mu2A(0.);
+                        }
+
+                        localrapidity = rapidity;
+                        Ydeviation = 10000;
+                        while (std::abs(Ydeviation) > 0.001) {
+                            if (localrapidity >= 0)
+                                QsB = sqrt(getNuclearQs2(
+                                    lat->cells[localpos]->getTpB(),
+                                    localrapidity));
+                            else {
+                                xVal = QsB * param->getxFromThisFactorTimesQs()
+                                       / param->getRoots() * exp(-yIn);
+                                if (xVal == 0)
+                                    QsB = 0.;
+                                else
+                                    QsB =
+                                        sqrt(getNuclearQs2(
+                                            lat->cells[localpos]->getTpB(), 0.))
+                                        * sqrt(
+                                            pow((1 - xVal) / (1 - 0.01),
+                                                exponent)
+                                            * pow((0.01 / xVal), 0.2));
+                            }
+                            if (QsB == 0) {
+                                Ydeviation = 0;
+                                lat->cells[localpos]->setg2mu2B(0.);
+                            } else {
+                                // nucleus B
+                                lat->cells[localpos]->setg2mu2B(
+                                    QsB * QsB / param->getQsmuRatioB()
+                                    / param->getQsmuRatioB() * a * a / hbarc
+                                    / hbarc / param->getg() / param->getg());
+                                Ydeviation =
+                                    localrapidity
+                                    - log(
+                                        0.01
+                                        / (QsB
+                                           * param->getxFromThisFactorTimesQs()
+                                           / param->getRoots() * exp(-yIn)));
+                                localrapidity = log(
+                                    0.01
+                                    / (QsB * param->getxFromThisFactorTimesQs()
+                                       / param->getRoots() * exp(-yIn)));
+                            }
+                        }
+                        if (lat->cells[localpos]->getg2mu2B()
+                            != lat->cells[localpos]->getg2mu2B()) {
+                            lat->cells[localpos]->setg2mu2B(0.);
+                        }
+                        // _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-
+                        // end iterative loops here
                     } else {
                         // nucleus A
-                        lat->cells[ipos]->setg2mu2A(
-                            QsA * QsA / param->getQsmuRatio()
-                            / param->getQsmuRatio() * a * a / hbarc / hbarc
-                            / param->getg()
+                        lat->cells[localpos]->setg2mu2A(
+                            getNuclearQs2(
+                                lat->cells[localpos]->getTpA(), localrapidity)
+                            / param->getQsmuRatio() / param->getQsmuRatio() * a
+                            * a / hbarc / hbarc / param->getg()
                             / param->getg());  // lattice units? check
 
-                        Ydeviation =
-                            localrapidity
-                            - log(
-                                0.01
-                                / (QsA * param->getxFromThisFactorTimesQs()
-                                   / param->getRoots() * exp(yIn)));
-                        localrapidity =
-                            log(0.01
-                                / (QsA * param->getxFromThisFactorTimesQs()
-                                   / param->getRoots() * exp(yIn)));
-                    }
-                }
-                if (lat->cells[ipos]->getg2mu2A()
-                    != lat->cells[ipos]->getg2mu2A()) {
-                    lat->cells[ipos]->setg2mu2A(0.);
-                }
-
-                localrapidity = rapidityB;
-                yIn = rapidityB;
-                Ydeviation = 10000;
-                while (abs(Ydeviation) > 0.001) {
-                    if (localrapidity >= 0)
-                        QsB = sqrt(getNuclearQs2(
-                            lat->cells[ipos]->getTpB(), abs(localrapidity)));
-                    else {
-                        xVal = QsB * param->getxFromThisFactorTimesQs()
-                               / param->getRoots() * exp(-yIn);
-                        if (xVal == 0)
-                            QsB = 0.;
-                        else
-                            QsB = sqrt(getNuclearQs2(
-                                      lat->cells[ipos]->getTpB(), 0.))
-                                  * sqrt(
-                                      pow((1 - xVal) / (1 - 0.01), exponent)
-                                      * pow((0.01 / xVal), 0.2));
-                    }
-                    if (QsB == 0) {
-                        Ydeviation = 0;
-                        lat->cells[ipos]->setg2mu2B(0.);
-                    } else {
                         // nucleus B
-                        lat->cells[ipos]->setg2mu2B(
-                            QsB * QsB / param->getQsmuRatioB()
-                            / param->getQsmuRatioB() * a * a / hbarc / hbarc
-                            / param->getg() / param->getg());
-                        Ydeviation =
-                            localrapidity
-                            - log(
-                                0.01
-                                / (QsB * param->getxFromThisFactorTimesQs()
-                                   / param->getRoots() * exp(-yIn)));
-                        localrapidity =
-                            log(0.01
-                                / (QsB * param->getxFromThisFactorTimesQs()
-                                   / param->getRoots() * exp(-yIn)));
+                        lat->cells[localpos]->setg2mu2B(
+                            getNuclearQs2(
+                                lat->cells[localpos]->getTpB(), localrapidity)
+                            / param->getQsmuRatioB() / param->getQsmuRatioB()
+                            * a * a / hbarc / hbarc / param->getg()
+                            / param->getg());
                     }
                 }
-                if (lat->cells[ipos]->getg2mu2B()
-                    != lat->cells[ipos]->getg2mu2B()) {
-                    lat->cells[ipos]->setg2mu2B(0.);
-                }
-            } else {
-                // nucleus A
-                lat->cells[ipos]->setg2mu2A(
-                    getNuclearQs2(lat->cells[ipos]->getTpA(), rapidityA)
-                    / param->getQsmuRatio() / param->getQsmuRatio() * a * a
-                    / hbarc / hbarc / param->getg()
-                    / param->getg());  // lattice units? check
-
-                // nucleus B
-                lat->cells[ipos]->setg2mu2B(
-                    getNuclearQs2(lat->cells[ipos]->getTpB(), rapidityB)
-                    / param->getQsmuRatioB() / param->getQsmuRatioB() * a * a
-                    / hbarc / hbarc / param->getg() / param->getg());
             }
         }
     }
+
+    count = 0;
+    double Tpp = 0.;
+    double x, xm, y, ym;
+    double alphas = 0.;
+    int check = 0;
+    for (int ix = 0; ix < N; ix++)  // loop over all positions
+    {
+        for (int iy = 0; iy < N; iy++) {
+            check = 0;
+            pos = ix * N + iy;
+            x = -L / 2. + a * ix;
+            y = -L / 2. + a * iy;
+            //    outvalue = lat->cells[pos]->getg2mu2A();
+
+            posA = pos;
+            posB = pos;
+
+            if (posA > 0 && posA < (N - 1) * N + N - 1) {
+                g2mu2A = lat->cells[posA]->getg2mu2A();
+            } else
+                g2mu2A = 0;
+
+            if (posB > 0 && posB < (N - 1) * N + N - 1) {
+                g2mu2B = lat->cells[posB]->getg2mu2B();
+            } else
+                g2mu2B = 0;
+
+            if (g2mu2B >= g2mu2A) {
+                averageQs2min2 += g2mu2A * param->getQsmuRatio()
+                                  * param->getQsmuRatio() / a / a * hbarc
+                                  * hbarc * param->getg() * param->getg();
+            } else {
+                averageQs2min2 += g2mu2B * param->getQsmuRatioB()
+                                  * param->getQsmuRatioB() / a / a * hbarc
+                                  * hbarc * param->getg() * param->getg();
+            }
+
+            for (int i = 0; i < A1; i++) {
+                xm = nucleusA_.at(i).x;
+                ym = nucleusA_.at(i).y;
+                r = sqrt((x - xm) * (x - xm) + (y - ym) * (y - ym));
+
+                if (r < sqrt(0.1 * param->getSigmaNN() / M_PI)
+                    && nucleusA_.at(i).collided == 1) {
+                    check = 1;
+                }
+            }
+
+            for (int i = 0; i < A2; i++) {
+                xm = nucleusB_.at(i).x;
+                ym = nucleusB_.at(i).y;
+                r = sqrt((x - xm) * (x - xm) + (y - ym) * (y - ym));
+
+                if (r < sqrt(0.1 * param->getSigmaNN() / M_PI)
+                    && nucleusB_.at(i).collided == 1 && check == 1)
+                    check = 2;
+            }
+
+            if (check == 2) {
+                if (g2mu2B > g2mu2A) {
+                    averageQs += sqrt(
+                        g2mu2B * param->getQsmuRatioB() * param->getQsmuRatioB()
+                        / a / a * hbarc * hbarc * param->getg()
+                        * param->getg());
+                    averageQs2 += g2mu2B * param->getQsmuRatioB()
+                                  * param->getQsmuRatioB() / a / a * hbarc
+                                  * hbarc * param->getg() * param->getg();
+                    averageQs2min += g2mu2A * param->getQsmuRatio()
+                                     * param->getQsmuRatio() / a / a * hbarc
+                                     * hbarc * param->getg() * param->getg();
+                } else {
+                    averageQs += sqrt(
+                        g2mu2A * param->getQsmuRatio() * param->getQsmuRatio()
+                        / a / a * hbarc * hbarc * param->getg()
+                        * param->getg());
+                    averageQs2 += g2mu2A * param->getQsmuRatio()
+                                  * param->getQsmuRatio() / a / a * hbarc
+                                  * hbarc * param->getg() * param->getg();
+                    averageQs2min += g2mu2B * param->getQsmuRatioB()
+                                     * param->getQsmuRatioB() / a / a * hbarc
+                                     * hbarc * param->getg() * param->getg();
+                }
+                averageQs2Avg +=
+                    (g2mu2B * param->getQsmuRatioB() * param->getQsmuRatioB()
+                     + g2mu2A * param->getQsmuRatio() * param->getQsmuRatio())
+                    / 2. / a / a * hbarc * hbarc * param->getg()
+                    * param->getg();
+                count++;
+            }
+            // compute T_pp
+            Tpp += lat->cells[pos]->getTpB() * lat->cells[pos]->getTpA() * a * a
+                   / hbarc / hbarc / hbarc
+                   / hbarc;  // now this quantity is in fm^-2
+                             // remember: Tp is in GeV^2
+        }
+    }
+
+    if (count == 0) {
+        param->setAverageQs(0.);
+        param->setAverageQsAvg(0.);
+        param->setAverageQsmin(0.);
+        param->setTpp(Tpp);
+        param->setSuccess(0);
+        cout << "**** Rejected event - no overlap region (count=0)." << endl;
+        return;
+    }
+
+    averageQs /= static_cast<double>(count);
+    averageQs2 /= static_cast<double>(count);
+    averageQs2Avg /= static_cast<double>(count);
+    averageQs2min /= static_cast<double>(count);
+
+    param->setAverageQs(sqrt(averageQs2));
+    param->setAverageQsAvg(sqrt(averageQs2Avg));
+    param->setAverageQsmin(sqrt(averageQs2min));
+
+    param->setTpp(Tpp);
+
+    messager << "N_part=" << Npart;
+    messager.flush("info");
+    messager << "N_coll=" << Ncoll;
+    messager.flush("info");
+    cout << "T_pp(" << param->getb() << " fm) = " << Tpp << " 1/fm^2" << endl;
+    cout << "Q_s^2(max) S_T = "
+         << averageQs2 * a * a / hbarc / hbarc * static_cast<double>(count)
+         << endl;
+    cout << "Q_s^2(avg) S_T = "
+         << averageQs2Avg * a * a / hbarc / hbarc * static_cast<double>(count)
+         << endl;
+    cout << "Q_s^2(min) S_T = "
+         << averageQs2min * a * a / hbarc / hbarc * static_cast<double>(count)
+         << endl;
+    cout << "Q_s^2(min) S_T = " << averageQs2min2 * a * a / hbarc / hbarc
+         << endl;
+
+    cout << "Area = " << a * a * count << " fm^2" << endl;
+
+    cout << "Average Qs(max) = " << param->getAverageQs() << " GeV" << endl;
+    cout << "Average Qs(avg) = " << param->getAverageQsAvg() << " GeV" << endl;
+    cout << "Average Qs(min) = " << param->getAverageQsmin() << " GeV" << endl;
+
+    cout << "resulting Y(Qs(max)*" << param->getxFromThisFactorTimesQs()
+         << ") = "
+         << log(0.01
+                / (param->getAverageQs() * param->getxFromThisFactorTimesQs()
+                   / param->getRoots()))
+         << endl;
+    cout << "resulting Y(Qs(avg)*" << param->getxFromThisFactorTimesQs()
+         << ") = "
+         << log(0.01
+                / (param->getAverageQsAvg() * param->getxFromThisFactorTimesQs()
+                   / param->getRoots()))
+         << endl;
+    cout << "resulting Y(Qs(min)*" << param->getxFromThisFactorTimesQs()
+         << ") =  "
+         << log(0.01
+                / (param->getAverageQsmin() * param->getxFromThisFactorTimesQs()
+                   / param->getRoots()))
+         << endl;
+
     messager.info("Color charge densities for nucleus A and B set. ");
+
+    if (param->getRunningCoupling() && param->getRunWithkt() == 0) {
+        if (param->getRunWithQs() == 2) {
+            cout << "running with " << param->getRunWithThisFactorTimesQs()
+                 << " Q_s(max)" << endl;
+            alphas = 12. * M_PI
+                     / ((27.) * 2.
+                        * log(
+                            param->getRunWithThisFactorTimesQs()
+                            * param->getAverageQs() / 0.2));  // 3 flavors
+            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
+                 << " Qs_max)=" << alphas << endl;
+        } else if (param->getRunWithQs() == 0) {
+            cout << "running with " << param->getRunWithThisFactorTimesQs()
+                 << " Q_s(min)" << endl;
+            alphas = 12. * M_PI
+                     / ((27.) * 2.
+                        * log(
+                            param->getRunWithThisFactorTimesQs()
+                            * param->getAverageQsmin() / 0.2));  // 3 flavors
+            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
+                 << " Qs_min)=" << alphas << endl;
+        } else if (param->getRunWithQs() == 1) {
+            cout << "running with " << param->getRunWithThisFactorTimesQs()
+                 << " <Q_s>" << endl;
+            alphas = 12. * M_PI
+                     / ((27.) * 2.
+                        * log(
+                            param->getRunWithThisFactorTimesQs()
+                            * param->getAverageQsAvg() / 0.2));  // 3 flavors
+            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
+                 << " <Qs>)=" << alphas << endl;
+        }
+    } else if (param->getRunningCoupling() && param->getRunWithkt() == 1) {
+        cout << "Multiplicity with running alpha_s(k_T)" << endl;
+    } else {
+        cout << "Using fixed alpha_s" << endl;
+        alphas = param->getg() * param->getg() / 4. / M_PI;
+    }
+
+    if (param->getAverageQs() > 0 && param->getAverageQsAvg() > 0
+        && averageQs2 > 0 && param->getAverageQsmin() > 0 && averageQs2Avg > 0
+        && alphas > 0 && Npart >= 2
+        && averageQs2min2 * a * a / hbarc / hbarc > param->getMinimumQs2ST()) {
+        param->setSuccess(1);
+        stringstream strup_name;
+        strup_name << "usedParameters" << param->getEventId() << ".dat";
+        string up_name;
+        up_name = strup_name.str();
+
+        ofstream fout1(up_name.c_str(), std::ios::app);
+        fout1 << " " << endl;
+        fout1 << " Output by setColorChargeDensity in Init.cpp: " << endl;
+        fout1 << " " << endl;
+        fout1 << "b = " << impact_b << " fm" << endl;
+        fout1 << "phiRP = " << phiRP << endl;
+        fout1 << "Npart = " << Npart << endl;
+        fout1 << "Ncoll = " << Ncoll << endl;
+        if (param->getRunningCoupling()) {
+            if (param->getRunWithQs() == 2)
+                fout1 << "<Q_s>(max) = " << param->getAverageQs() << endl;
+            else if (param->getRunWithQs() == 1)
+                fout1 << "<Q_s>(avg) = " << param->getAverageQsAvg() << endl;
+            else if (param->getRunWithQs() == 0)
+                fout1 << "<Q_s>(min) = " << param->getAverageQsmin() << endl;
+            fout1 << "alpha_s(" << param->getRunWithThisFactorTimesQs()
+                  << " <Q_s>) = " << param->getalphas() << endl;
+        } else
+            fout1 << "using fixed coupling alpha_s=" << param->getalphas()
+                  << endl;
+        fout1.close();
+    }
+    if (averageQs2min2 * a * a / hbarc / hbarc < param->getMinimumQs2ST())
+        cout << " **** Rejected event - Qsmin^2 S_T="
+             << averageQs2min2 * a * a / hbarc / hbarc << " too small ( < "
+             << param->getMinimumQs2ST() << ")." << endl;
+
+    param->setalphas(alphas);
+
+    stringstream strNEst_name;
+    strNEst_name << "NgluonEstimators" << param->getEventId() << ".dat";
+    string NEst_name;
+    NEst_name = strNEst_name.str();
+
+    ofstream foutNEst(NEst_name.c_str(), std::ios::out);
+
+    foutNEst << "#Q_s^2(min) S_T  " << "Q_s^2(avg) S_T  " << "Q_s^2(max) S_T "
+             << " Q_s^2(min) S_T Log^2( Q_s^2(max) / Q_s^2(min))  " << endl;
+    foutNEst << averageQs2min2 * a * a / hbarc / hbarc << "         "
+             << averageQs2Avg * a * a / hbarc / hbarc
+                    * static_cast<double>(count)
+             << "         "
+             << averageQs2 * a * a / hbarc / hbarc * static_cast<double>(count)
+             << "         "
+             << averageQs2min2 * a * a / hbarc / hbarc
+                    * pow(
+                        log(averageQs2 * static_cast<double>(count)
+                            / averageQs2min2),
+                        2.)
+             << endl;
+
+    foutNEst.close();
 }
 
-// This function compute the collision geometry quantities, such as
-// Npart, Ncoll, averageQs, etc.
+namespace {
+void writeInitialWilsonTrainingData(Lattice *lat, Parameters *param) {
+    const int N = param->getSize();
+    const int Nc = param->getNc();
+    const double L = param->getL();
+    const double a = L / static_cast<double>(N);
+
+    // Payload: [beam, real_or_imag, x, y, row, col], C-order.
+    constexpr int nBeams = 2;
+    const std::size_t matrixElements =
+        static_cast<std::size_t>(N) * N * Nc * Nc;
+    std::vector<float> payload(
+        static_cast<std::size_t>(nBeams) * 2 * matrixElements);
+
+    for (int beam = 0; beam < nBeams; ++beam) {
+        const std::size_t realOffset =
+            static_cast<std::size_t>(2 * beam) * matrixElements;
+        const std::size_t imagOffset = realOffset + matrixElements;
+        for (int x = 0; x < N; ++x) {
+            for (int y = 0; y < N; ++y) {
+                const int pos = x * N + y;
+                const Matrix &matrix = (beam == 0) ? lat->U[pos] : lat->U2[pos];
+                const std::complex<double> *elements = matrix.data();
+                const std::size_t siteOffset =
+                    static_cast<std::size_t>(pos) * Nc * Nc;
+                for (int row = 0; row < Nc; ++row) {
+                    for (int col = 0; col < Nc; ++col) {
+                        const std::size_t element =
+                            static_cast<std::size_t>(row) * Nc + col;
+                        payload[realOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].real());
+                        payload[imagOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].imag());
+                    }
+                }
+            }
+        }
+    }
+
+    const std::uint16_t endianProbe = 1;
+    if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
+        throw std::runtime_error(
+            "writeInitialWilsonTrainingData requires a little-endian host");
+    }
+
+    std::stringstream metadata;
+    metadata << std::setprecision(17)
+             << "{\"format\":\"ipglasma-initial-wilson-lines\","
+             << "\"version\":1,"
+             << "\"dtype\":\"<f4\","
+             << "\"shape\":[2,2," << N << "," << N << "," << Nc << "," << Nc
+             << "],"
+             << "\"axis_order\":[\"beam\",\"complex_part\",\"x\",\"y\","
+                "\"row\",\"col\"],"
+             << "\"fields\":[\"VA\",\"VB\"],"
+             << "\"complex_part\":[\"real\",\"imag\"],"
+             << "\"native_site_index\":\"pos=x*N+y\","
+             << "\"event_id\":" << param->getEventId() << ","
+             << "\"N\":" << N << ","
+             << "\"Nc\":" << Nc << ","
+             << "\"L_fm\":" << L << ","
+             << "\"a_fm\":" << a << ","
+             << "\"rapidity\":" << param->getRapidity() << "}";
+    const std::string metadataString = metadata.str();
+
+    std::stringstream filename;
+    filename << "initialWilsonLines" << param->getEventId() << ".ipgw";
+    std::ofstream output(
+        filename.str().c_str(),
+        std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error(
+            "could not open initial-Wilson snapshot " + filename.str());
+    }
+    const char magic[8] = {'I', 'P', 'G', 'W', 'I', 'L', '1', '\0'};
+    const std::uint64_t metadataBytes =
+        static_cast<std::uint64_t>(metadataString.size());
+    output.write(magic, sizeof(magic));
+    output.write(
+        reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
+    output.write(metadataString.data(), metadataString.size());
+    output.write(
+        reinterpret_cast<const char *>(payload.data()),
+        static_cast<std::streamsize>(payload.size() * sizeof(float)));
+    output.close();
+    if (!output) {
+        throw std::runtime_error(
+            "failed while writing initial-Wilson snapshot " + filename.str());
+    }
+    std::cout << "Wrote incoming Wilson lines to " << filename.str()
+              << std::endl;
+}
+}  // namespace
+
+void Init::setV(Lattice *lat, Parameters *param, Random *random) {
+    IPG_PROFILE_SCOPE("initialization.wilson_lines");
+    messager.info("Setting Wilson lines ...");
+    const int N = param->getSize();
+    const int Ny = param->getNy();
+    const int sites = N * N;
+    const int nn[2] = {N, N};
+    const double L = param->getL();
+    const double a = L / N;  // lattice spacing in fm
+    const double m = param->getm() * a / hbarc;
+    const double g = param->getg();
+    const double invNy = 1. / static_cast<double>(Ny);
+    double UVdamp = param->getUVdamp();  // GeV^-1
+    UVdamp = UVdamp / a * hbarc;
+
+    // The lattice Poisson/UV kernel depends only on transverse momentum and
+    // run parameters.  The historical implementation recomputed the same
+    // sin/sqrt/exp expressions for every longitudinal sheet of both nuclei.
+    std::vector<double> momentumKernel(static_cast<std::size_t>(sites));
+#pragma omp parallel for
+    for (int pos = 0; pos < sites; ++pos) {
+        const int i = pos / N;
+        const int j = pos - i * N;
+        const double kx =
+            2. * M_PI
+            * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
+        const double ky =
+            2. * M_PI
+            * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
+        const double sx = sin(kx / 2.);
+        const double sy = sin(ky / 2.);
+        const double kt2 = 4. * (sx * sx + sy * sy);
+
+        if (m == 0.) {
+            momentumKernel[static_cast<std::size_t>(pos)] =
+                (kt2 != 0.) ? 1. / kt2 : 0.;
+        } else {
+            momentumKernel[static_cast<std::size_t>(pos)] =
+                (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
+        }
+    }
+
+    complex<double> **rhoACoeff = new complex<double> *[Nc2m1_];
+    for (int i = 0; i < Nc2m1_; i++) {
+        rhoACoeff[i] = new complex<double>[sites];
+    }
+
+    auto applyMomentumKernel = [&]() {
+#pragma omp parallel for
+        for (int n = 0; n < Nc2m1_; ++n) {
+            complex<double> *rho = rhoACoeff[n];
+            for (int pos = 0; pos < sites; ++pos) {
+                rho[pos] *= momentumKernel[static_cast<std::size_t>(pos)];
+            }
+        }
+    };
+
+    // Reuse the bulk Gaussian buffers for every longitudinal sheet.  The
+    // linear ordering matches the historical pos-major/color-minor Gauss()
+    // call sequence exactly.
+    std::vector<double> gaussianField(
+        static_cast<std::size_t>(sites) * static_cast<std::size_t>(Nc2m1_));
+    std::vector<double> gaussianScratch;
+    gaussianScratch.reserve(5 * ((gaussianField.size() + 1) / 2));
+
+    // g2mu2 and Ny are fixed throughout Wilson-line construction.  Cache the
+    // color-independent site scale once for each nucleus instead of repeating
+    // the same sqrt in every longitudinal sheet.
+    std::vector<double> colorChargeScaleA(static_cast<std::size_t>(sites));
+    std::vector<double> colorChargeScaleB(static_cast<std::size_t>(sites));
+#pragma omp parallel for
+    for (int pos = 0; pos < sites; ++pos) {
+        colorChargeScaleA[static_cast<std::size_t>(pos)] =
+            g * sqrt(lat->cells[pos]->getg2mu2A() * invNy);
+        colorChargeScaleB[static_cast<std::size_t>(pos)] =
+            g * sqrt(lat->cells[pos]->getg2mu2B() * invNy);
+    }
+
+    auto fillColorCharge = [&](const std::vector<double> &scale) {
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random.gauss");
+            random->GaussBulk(
+                gaussianField.data(), gaussianField.size(), gaussianScratch);
+        }
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random.scale");
+#pragma omp parallel for
+            for (int pos = 0; pos < sites; ++pos) {
+                const double localScale = scale[static_cast<std::size_t>(pos)];
+                const std::size_t base = static_cast<std::size_t>(pos)
+                                         * static_cast<std::size_t>(Nc2m1_);
+                for (int n = 0; n < Nc2m1_; ++n) {
+                    rhoACoeff[n][pos] =
+                        localScale
+                        * gaussianField[base + static_cast<std::size_t>(n)];
+                }
+            }
+        }
+    };
+
+    // loop over longitudinal direction for nucleus A
+    for (int k = 0; k < Ny; k++) {
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random");
+            fillColorCharge(colorChargeScaleA);
+        }
+
+        for (int n = 0; n < Nc2m1_; n++) {
+            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
+        }
+
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_poisson");
+            applyMomentumKernel();
+        }
+
+        for (int n = 0; n < Nc2m1_; n++) {
+            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
+        }
+
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_exponent");
+#pragma omp parallel
+            {
+                std::vector<double> in(Nc2m1_, 0.);
+                Matrix temp(Nc_, 1.);
+                Matrix tempNew(Nc_, 0.);
+
+#pragma omp for
+                for (int pos = 0; pos < sites; pos++) {
+                    for (int aa = 0; aa < Nc2m1_; aa++) {
+                        // expmCoeff calculates exp(i in[a] t[a]), so multiply
+                        // by -1 (not -i).
+                        in[aa] = -(rhoACoeff[aa][pos]).real();
+                    }
+                    tempNew = getUfromExponent(in);
+                    temp = tempNew * lat->U[pos];
+                    lat->U[pos] = temp;
+                }
+            }
+        }
+    }
+
+    // loop over longitudinal direction for nucleus B
+    for (int k = 0; k < Ny; k++) {
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_random");
+            fillColorCharge(colorChargeScaleB);
+        }
+
+        for (int n = 0; n < Nc2m1_; n++) {
+            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
+        }
+
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_poisson");
+            applyMomentumKernel();
+        }
+
+        for (int n = 0; n < Nc2m1_; n++) {
+            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
+        }
+
+        // The old nucleus-B block had its omp parallel directive commented
+        // out, leaving this expensive exponential/multiply pass effectively
+        // serial.  Match the nucleus-A implementation.
+        {
+            IPG_PROFILE_SCOPE("initialization.wilson_exponent");
+#pragma omp parallel
+            {
+                std::vector<double> in(Nc2m1_, 0.);
+                Matrix temp(Nc_, 1.);
+                Matrix tempNew(Nc_, 0.);
+
+#pragma omp for
+                for (int pos = 0; pos < sites; pos++) {
+                    for (int aa = 0; aa < Nc2m1_; aa++) {
+                        in[aa] = -(rhoACoeff[aa][pos]).real();
+                    }
+                    tempNew = getUfromExponent(in);
+                    temp = tempNew * lat->U2[pos];
+                    lat->U2[pos] = temp;
+                }
+            }
+        }
+    }
+
+    // --------
+    for (int ic = 0; ic < Nc2m1_; ic++) {
+        delete[] rhoACoeff[ic];
+    }
+    delete[] rhoACoeff;
+    if (param->getWriteOutputs() == 5) {
+        writeInitialWilsonTrainingData(lat, param);
+    }
+
+    // // output U
+    if (param->getWriteInitialWilsonLines() > 0) {
+        if (std::abs(param->getb()) > 1e-5)
+            messager.warning(
+                "Writing Wilson lines with a non-zero impact parameter b!");
+
+        stringstream strVOne_name;
+        // strVOne_name << "V1-" << param->getMPIRank() << ".txt";
+        strVOne_name << "V-"
+                     << param->getEventId()
+                            + 2 * param->getSeed() * param->getMPISize();
+        if (param->getWriteInitialWilsonLines() == 1) strVOne_name << ".txt";
+        string VOne_name;
+        VOne_name = strVOne_name.str();
+
+        stringstream strVTwo_name;
+        // strVTwo_name << "V2-" << param->getMPIRank() << ".txt";
+        strVTwo_name << "V-"
+                     << param->getEventId()
+                            + (1 + 2 * param->getSeed()) * param->getMPISize();
+        if (param->getWriteInitialWilsonLines() == 1) strVTwo_name << ".txt";
+        string VTwo_name;
+        VTwo_name = strVTwo_name.str();
+        // Output in text
+        if (param->getWriteInitialWilsonLines() == 1) {
+            ofstream foutU(VOne_name.c_str(), std::ios::out);
+            foutU.precision(15);
+
+            for (int ix = 0; ix < N; ix++) {
+                for (int iy = 0; iy < N; iy++)  // loop over all positions
+                {
+                    int pos = ix * N + iy;
+                    foutU << ix << " " << iy << " "
+                          << (lat->U[pos]).MatrixToString() << endl;
+                }
+                foutU << endl;
+            }
+            foutU.close();
+
+            cout << "wrote " << strVOne_name.str() << endl;
+
+            ofstream foutU2(VTwo_name.c_str(), std::ios::out);
+            foutU2.precision(15);
+            for (int ix = 0; ix < N; ix++) {
+                for (int iy = 0; iy < N; iy++)  // loop over all positions
+                {
+                    int pos = ix * N + iy;
+                    foutU2 << ix << " " << iy << " "
+                           << (lat->U2[pos]).MatrixToString() << endl;
+                }
+                foutU2 << endl;
+            }
+            foutU2.close();
+
+            cout << "wrote " << strVTwo_name.str() << endl;
+        }  // end output in text
+        else if (param->getWriteInitialWilsonLines() == 2) {
+            std::ofstream Outfile1, Outfile2;
+            Outfile1.open(VOne_name.c_str(), std::ios::out | std::ios::binary);
+            Outfile2.open(VTwo_name.c_str(), std::ios::out | std::ios::binary);
+
+            double temp = param->getRapidity();
+
+            // print header ------------- //
+            Outfile1.write((char *)&N, sizeof(int));
+            Outfile1.write((char *)&Nc_, sizeof(int));
+            Outfile1.write((char *)&L, sizeof(double));
+            Outfile1.write((char *)&a, sizeof(double));
+            Outfile1.write((char *)&temp, sizeof(double));
+
+            Outfile2.write((char *)&N, sizeof(int));
+            Outfile2.write((char *)&Nc_, sizeof(int));
+            Outfile2.write((char *)&L, sizeof(double));
+            Outfile2.write((char *)&a, sizeof(double));
+            Outfile2.write((char *)&temp, sizeof(double));
+            //
+
+            double *val1 = new double[2];
+            double *val2 = new double[2];
+
+            for (int ix = 0; ix < N; ix++) {
+                for (int iy = 0; iy < N; iy++) {
+                    for (int a1 = 0; a1 < 3; a1++) {
+                        for (int b = 0; b < 3; b++) {
+                            int indx = N * iy + ix;
+                            val1[0] = (lat->U[indx]).getRe(a1 * Nc_ + b);
+                            val1[1] = (lat->U[indx]).getIm(a1 * Nc_ + b);
+                            val2[0] = (lat->U2[indx]).getRe(a1 * Nc_ + b);
+                            val2[1] = (lat->U2[indx]).getIm(a1 * Nc_ + b);
+
+                            Outfile1.write((char *)val1, 2 * sizeof(double));
+                            Outfile2.write((char *)val2, 2 * sizeof(double));
+                        }
+                    }
+                }
+            }
+
+            if (Outfile1.good() == false || Outfile2.good() == false) {
+                std::cerr << "#CRTICAL ERROR -- BINARY OUTPUT OF VECTOR "
+                             "CURRENTS FAILED"
+                          << std::endl;
+                exit(1);
+            }
+
+            delete[] val1;
+            delete[] val2;
+
+            Outfile1.close();
+            Outfile2.close();
+            cout << "wrote " << strVOne_name.str() << " and "
+                 << strVTwo_name.str() << endl;
+        }  // end binary output
+        else {
+            std::cerr
+                << "# Unknwon option param->getWriteInitialWilsonLines()=="
+                << param->getWriteInitialWilsonLines() << std::endl;
+            exit(1);
+        }
+    }
+    // --------
+
+    messager << " Wilson lines V_A and V_B set on rank " << param->getMPIRank()
+             << ". ";
+    messager.flush("info");
+}
+
+void Init::readV(Lattice *lat, Parameters *param, int format) {
+    IPG_PROFILE_SCOPE("initialization.read_wilson_lines");
+    // format 1 = plain text, 2 = binary
+
+    if (format > 2 or format < 1) {
+        messager
+            << "Unknown format " << format
+            << " when reading the initial Wilson lines, supported formats: 1,2";
+        messager.flush("info");
+        exit(1);
+    }
+
+    stringstream strVOne_name;
+    // strVOne_name << "V1-" << param->getMPIRank() << ".txt";
+    strVOne_name << "V-"
+                 << param->getEventId()
+                        + 2 * param->getSeed() * param->getMPISize();
+    if (format == 1) strVOne_name << ".txt";
+    string VOne_name;
+    VOne_name = strVOne_name.str();
+
+    stringstream strVTwo_name;
+    // strVTwo_name << "V2-" << param->getMPIRank() << ".txt";
+    strVTwo_name << "V-"
+                 << param->getEventId()
+                        + (1 + 2 * param->getSeed()) * param->getMPISize();
+    if (format == 1) strVTwo_name << ".txt";
+    string VTwo_name;
+    VTwo_name = strVTwo_name.str();
+
+    messager << "Reading Wilson lines from files " << VOne_name << " and "
+             << VTwo_name;
+    messager.flush("info");
+
+    if (format == 1) {
+        int N = param->getSize();
+
+        double L = param->getL();
+        double a = L / static_cast<double>(N);
+
+        int nn[2];
+        nn[0] = N;
+        nn[1] = N;
+
+        Matrix temp(Nc_, 1.);
+
+        double Re[9], Im[9];
+        double dummy;
+
+        ifstream finV1(VOne_name.c_str(), std::ios::in);
+
+        if (!finV1) {
+            messager << "File " << VOne_name << " not found. Exiting.";
+            messager.flush("info");
+            exit(1);
+        }
+
+        messager << "Reading Wilson line from file " << VOne_name << " ...";
+
+        // set V for nucleus A
+        for (int i = 0; i < nn[0]; i++) {
+            for (int j = 0; j < nn[1]; j++) {
+                finV1 >> dummy >> dummy >> Re[0] >> Im[0] >> Re[1] >> Im[1]
+                    >> Re[2] >> Im[2] >> Re[3] >> Im[3] >> Re[4] >> Im[4]
+                    >> Re[5] >> Im[5] >> Re[6] >> Im[6] >> Re[7] >> Im[7]
+                    >> Re[8] >> Im[8];
+
+                temp.set(0, 0, complex<double>(Re[0], Im[0]));
+                temp.set(0, 1, complex<double>(Re[1], Im[1]));
+                temp.set(0, 2, complex<double>(Re[2], Im[2]));
+                temp.set(1, 0, complex<double>(Re[3], Im[3]));
+                temp.set(1, 1, complex<double>(Re[4], Im[4]));
+                temp.set(1, 2, complex<double>(Re[5], Im[5]));
+                temp.set(2, 0, complex<double>(Re[6], Im[6]));
+                temp.set(2, 1, complex<double>(Re[7], Im[7]));
+                temp.set(2, 2, complex<double>(Re[8], Im[8]));
+
+                double bb = param->getb();
+                a = L / static_cast<double>(N);
+
+                double xtemp = a * i - bb / 2.;
+                int ix = xtemp / a;
+
+                if (ix < 0) continue;
+
+                int pos = ix * N + j;
+                lat->U[pos] = (temp);
+            }
+        }
+
+        finV1.close();
+
+        ifstream finV2(VTwo_name.c_str(), std::ios::in);
+
+        if (!finV2) {
+            cerr << "File " << VTwo_name << " not found. Exiting." << endl;
+            exit(1);
+        }
+
+        cout << "Reading Wilson line from file " << VTwo_name << " ..." << endl;
+
+        // set V for nucleus B
+        for (int i = 0; i < nn[0]; i++) {
+            for (int j = 0; j < nn[1]; j++) {
+                finV2 >> dummy >> dummy >> Re[0] >> Im[0] >> Re[1] >> Im[1]
+                    >> Re[2] >> Im[2] >> Re[3] >> Im[3] >> Re[4] >> Im[4]
+                    >> Re[5] >> Im[5] >> Re[6] >> Im[6] >> Re[7] >> Im[7]
+                    >> Re[8] >> Im[8];
+
+                temp.set(0, 0, complex<double>(Re[0], Im[0]));
+                temp.set(0, 1, complex<double>(Re[1], Im[1]));
+                temp.set(0, 2, complex<double>(Re[2], Im[2]));
+                temp.set(1, 0, complex<double>(Re[3], Im[3]));
+                temp.set(1, 1, complex<double>(Re[4], Im[4]));
+                temp.set(1, 2, complex<double>(Re[5], Im[5]));
+                temp.set(2, 0, complex<double>(Re[6], Im[6]));
+                temp.set(2, 1, complex<double>(Re[7], Im[7]));
+                temp.set(2, 2, complex<double>(Re[8], Im[8]));
+
+                double bb = param->getb();
+                a = L / static_cast<double>(N);
+
+                double xtemp = a * i + bb / 2.;
+                int ix = xtemp / a;
+
+                if (ix >= N) continue;
+
+                int pos = ix * N + j;
+                lat->U2[pos] = (temp);
+            }
+        }
+
+        finV2.close();
+    } else if (format == 2) {
+        std::ifstream InStream;
+        InStream.precision(15);
+        InStream.open(VOne_name.c_str(), std::ios::in | std::ios::binary);
+        int N;
+        double L, a, temp;
+
+        Matrix tempM(Nc_, 1.);
+
+        if (!InStream.good()) {
+            messager << "File " << VOne_name.c_str() << " does not exist!";
+            messager.flush("info");
+            exit(1);
+        }
+
+        if (InStream.is_open()) {
+            // READING IN PARAMETERS
+            InStream.read(reinterpret_cast<char *>(&N), sizeof(int));
+            InStream.read(reinterpret_cast<char *>(&Nc_), sizeof(int));
+            InStream.read(reinterpret_cast<char *>(&L), sizeof(double));
+            InStream.read(reinterpret_cast<char *>(&a), sizeof(double));
+            InStream.read(reinterpret_cast<char *>(&temp), sizeof(double));
+
+            if (N != param->getSize()) {
+                messager << "# ERROR wrong lattice size, data is " << N
+                         << " but you have specified " << param->getSize();
+                exit(0);
+            }
+            if (std::abs(L - param->getL()) > 1e-5) {
+                messager << "# ERROR grid length, data has " << L
+                         << " but you have specified " << param->getL();
+                exit(0);
+            }
+
+            // READING ACTUAL DATA
+            double ValueBuffer;
+            int INPUT_CTR = 0;
+            double re, im;
+            re = 0.;
+            im = 0.;
+
+            while (InStream.read(
+                reinterpret_cast<char *>(&ValueBuffer), sizeof(double))) {
+                if (INPUT_CTR % 2 == 0)  // this is the real part
+                {
+                    re = ValueBuffer;
+                } else  // this is the imaginary part, write then to variable //
+                {
+                    im = ValueBuffer;
+                    int TEMPINDX = ((INPUT_CTR - 1) / 2);
+                    int PositionIndx = TEMPINDX / 9;
+
+                    // shift here by half an impact parameter
+                    int iy = PositionIndx / N;
+                    int ixIn = PositionIndx - N * iy;
+
+                    double bb = param->getb();
+                    a = L / static_cast<double>(N);
+
+                    double xtemp = a * ixIn - bb / 2.;
+
+                    int ix = round(xtemp / a);
+
+                    // cout << ixIn << " " << ix << endl;
+
+                    int MatrixIndx = TEMPINDX - PositionIndx * 9;
+                    int j = MatrixIndx / 3;
+                    int k = MatrixIndx - j * 3;
+
+                    int indx = N * ix + iy;
+                    if (indx >= N * N || indx < 0) {
+                        if (bb == 0) {
+                            messager << "Warning: datafile " << VOne_name
+                                     << " has an element " << indx
+                                     << " (iy=" << iy << ", ix=" << ix
+                                     << "), but the grid is N=" << N
+                                     << ". Element is (" << re << " + " << im
+                                     << "i), skipping it";
+                            messager.flush("info");
+                        }
+                        INPUT_CTR++;
+                        continue;
+                    }
+                    lat->U[indx].set(j, k, complex<double>(re, im));
+                }
+                INPUT_CTR++;
+            }
+
+            InStream.close();
+
+            std::ifstream InStream2;
+            InStream2.precision(15);
+            InStream2.open(VTwo_name.c_str(), std::ios::in | std::ios::binary);
+            if (!InStream2.good()) {
+                messager << "File " << VTwo_name.c_str() << " does not exist!";
+                messager.flush("info");
+                exit(1);
+            }
+
+            INPUT_CTR = 0;
+            if (InStream2.is_open()) {
+                // READING IN PARAMETERS
+                InStream2.read(reinterpret_cast<char *>(&N), sizeof(int));
+                InStream2.read(reinterpret_cast<char *>(&Nc_), sizeof(int));
+                InStream2.read(reinterpret_cast<char *>(&L), sizeof(double));
+                InStream2.read(reinterpret_cast<char *>(&a), sizeof(double));
+                InStream2.read(reinterpret_cast<char *>(&temp), sizeof(double));
+
+                if (N != param->getSize()) {
+                    messager << "# ERROR wrong lattice size, data is " << N
+                             << " but you have specified " << param->getSize();
+                    messager.flush("info");
+                    exit(0);
+                }
+                if (std::abs(L - param->getL()) > 1e-5) {
+                    messager << "# ERROR grid length, dataas " << L
+                             << " but you have specified " << param->getL();
+                    messager.flush("info");
+                    exit(0);
+                }
+
+                // READING ACTUAL DATA
+                while (InStream2.read(
+                    reinterpret_cast<char *>(&ValueBuffer), sizeof(double))) {
+                    if (INPUT_CTR % 2 == 0)  // this is the real part
+                    {
+                        re = ValueBuffer;
+                    } else  // this is the imaginary part, write then to
+                            // variable //
+                    {
+                        im = ValueBuffer;
+
+                        int TEMPINDX = ((INPUT_CTR - 1) / 2);
+                        int PositionIndx = TEMPINDX / 9;
+
+                        // shift here by half an impact parameter
+                        int iy = PositionIndx / N;
+                        int ixIn = PositionIndx - N * iy;
+
+                        double bb = param->getb();
+                        a = L / static_cast<double>(N);
+
+                        double xtemp = a * ixIn + bb / 2.;
+
+                        int ix = round(xtemp / a);
+
+                        //                  if (ixIn != ix)
+                        //  cout << ixIn << " " << ix << endl;
+                        int MatrixIndx = TEMPINDX - PositionIndx * 9;
+                        int j = MatrixIndx / 3;
+                        int k = MatrixIndx - j * 3;
+
+                        int indx = N * ix + iy;
+
+                        if (indx >= N * N || indx < 0) {
+                            if (bb == 0) {
+                                messager << "Warning: datafile " << VTwo_name
+                                         << " has an element " << indx
+                                         << " (iy=" << iy << ", ix=" << ix
+                                         << "), but the grid is N=" << N
+                                         << ". Element is (" << re << " + "
+                                         << im << "i), skipping it";
+                                messager.flush("info");
+                            }
+                            INPUT_CTR++;
+                            continue;
+                        }
+                        lat->U2[indx].set(j, k, complex<double>(re, im));
+                        // if (indx > 65000) cout << "Save ok" << endl;
+                    }
+                    INPUT_CTR++;
+                }
+                InStream2.close();
+            }
+        }
+    }
+
+    messager << " Wilson lines V_A and V_B set on rank " << param->getMPIRank()
+             << ". ";
+    messager.flush("info");
+}
+
+void Init::init(
+    Lattice *lat, Group *group, Parameters *param, Random *random,
+    Glauber *glauber, int READFROMFILE) {
+    IPG_PROFILE_SCOPE("initialization.total");
+    Nc_ = param->getNc();
+    Nc2m1_ = Nc_ * Nc_ - 1;
+    group_ptr_ = group;
+    random_ptr_ = random;
+    one_ = Matrix(Nc_, 1.);
+
+    messager.info("Initializing fields ... ");
+    param->setRnp(0.);
+
+    // read Q_s^2 from file
+    if (param->getUseNucleus() == 0) {
+        param->setSuccess(1);
+    } else {
+        readNuclearQs(param);
+    }
+
+    if (param->getNucleonPositionsFromFile() > 0) {
+        readInNucleusConfigs(
+            static_cast<int>(glauber->nucleusA1()),
+            param->getlightNucleusOption(), param->getPolarizationProjectile(),
+            param->getPolarizationProjectileJz(), nucleonPosArrA_);
+        readInNucleusConfigs(
+            static_cast<int>(glauber->nucleusA2()),
+            param->getlightNucleusOption(), param->getPolarizationTarget(),
+            param->getPolarizationTargetJz(), nucleonPosArrB_);
+    }
+
+    // sample nucleon positions
+    nucleusA_.clear();
+    nucleusB_.clear();
+
+    // to read Wilson lines from file (e.g. after JIMWLK evolution for the
+    // 3DGlasma)
+    if (READFROMFILE > 0) {
+        readV(lat, param, READFROMFILE);
+        param->setSuccess(1);
+    } else {
+        // to generate your own Wilson lines
+        if (param->getUseNucleus() == 1) {
+            sampleTA(
+                param, random, glauber);  // populate the lists nucleusA_ and
+                                          // nucleusB_ with position data of the
+        }
+
+        // Build each nucleus's color charge density and Wilson lines in its
+        // own centered frame (b=0, no fixed-Npart resampling). The real
+        // impact parameter is sampled and applied afterwards, in
+        // sampleImpactParameter()/computeCollisionGeometryQuantities()/
+        // shiftFieldsWithImpactParameter() -- once the caller has had a
+        // chance to run JIMWLK evolution on the still-isolated nuclei in
+        // lat->U/lat->U2. (This means useFixedNpart's b-resampling loop,
+        // which needs the real collision geometry to know Npart, is not
+        // applied here; useFixedNpart together with JIMWLK is not
+        // supported.)
+        const double savedB = param->getb();
+        const int savedFixedNpart = param->getUseFixedNpart();
+        param->setb(0.);
+        param->setUseFixedNpart(0);
+
+        setColorChargeDensity(lat, param, random, glauber);
+
+        param->setb(savedB);
+        param->setUseFixedNpart(savedFixedNpart);
+
+        // setColorChargeDensity() also sets param->getSuccess() based on the
+        // (here, meaningless) b=0 "collision" it was just called with --
+        // that verdict gets overwritten with the real one once
+        // computeCollisionGeometryQuantities() runs on the actual impact
+        // parameter, so it is not checked here; we always proceed to build
+        // Wilson lines for the isolated nuclei.
+        param->setSuccess(1);
+
+        // sample color charges and find Wilson lines V_A and V_B
+        setV(lat, param, random);
+    }
+}
+
+void Init::sampleImpactParameter(Parameters *param) {
+    const double bmin = param->getbmin();
+    const double bmax = param->getbmax();
+    double b = 0.;
+    double xb = random_ptr_->genrand64_real1();
+    if (param->getUseNucleus() == 0) {
+        // use b=0 fm for the constant g^2 mu case
+        messager << "Setting b=0 for constant color charge density case.";
+        messager.flush("info");
+        b = 0;
+    } else {
+        if (param->getLinearb() == 1) {
+            // use a linear probability distribution for b if we are doing
+            // nuclei
+            messager << "Sampling linearly distributed b between " << bmin
+                     << " and " << bmax << "fm. Found ";
+            b = sqrt((bmax * bmax - bmin * bmin) * xb + bmin * bmin);
+        } else {
+            // use a uniform distribution instead
+            messager << "Sampling uniformly distributed b between " << bmin
+                     << " and " << bmax << "fm. Found ";
+            b = (bmax - bmin) * xb + bmin;
+        }
+    }
+    param->setb(b);
+    double phiRP = 0.;
+    if (param->getRotateReactionPlane()) {
+        phiRP = 2 * M_PI * random_ptr_->genrand64_real2();
+    }
+    param->setPhiRP(phiRP);
+    messager << "b = " << b << " fm, phi_RP = " << phiRP;
+    messager.flush("info");
+
+    for (unsigned int i = 0; i < nucleusA_.size(); i++) {
+        nucleusA_.at(i).collided = 0;
+    }
+    for (unsigned int i = 0; i < nucleusB_.size(); i++) {
+        nucleusB_.at(i).collided = 0;
+    }
+}
+
 void Init::computeCollisionGeometryQuantities(Lattice *lat, Parameters *param) {
     const double d2 = param->getSigmaNN() / (M_PI * 10.);  // in fm^2
     const double b = param->getb();
@@ -1661,7 +3003,8 @@ void Init::computeCollisionGeometryQuantities(Lattice *lat, Parameters *param) {
 
         ofstream fout1(up_name.c_str(), std::ios::app);
         fout1 << " " << endl;
-        fout1 << " Output by setColorChargeDensity in Init.cpp: " << endl;
+        fout1 << " Output by computeCollisionGeometryQuantities in Init.cpp: "
+              << endl;
         fout1 << " " << endl;
         fout1 << "b = " << param->getb() << " fm" << endl;
         fout1 << "phiRP = " << phiRP << endl;
@@ -1717,734 +3060,6 @@ void Init::computeCollisionGeometryQuantities(Lattice *lat, Parameters *param) {
     foutNEst.close();
 }
 
-void Init::setV(Lattice *lat, Parameters *param) {
-    messager.info("Setting Wilson lines ...");
-    const int A1 = nucleusA_.size();
-    const int A2 = nucleusB_.size();
-
-    const double d2 = param->getSigmaNN() / (M_PI * 10.);  // in fm^2
-    const int N = param->getSize();
-    const int Ny = param->getNy();
-    const int nn[2] = {N, N};
-    const double L = param->getL();
-    const double a = L / N;  // lattice spacing in fm
-    const double m = param->getm() * a / hbarc;
-    double UVdamp = param->getUVdamp();  // GeV^-1
-    UVdamp = UVdamp / a * hbarc;
-    complex<double> **rhoACoeff;
-    rhoACoeff = new complex<double> *[Nc2m1_];
-    for (int i = 0; i < Nc2m1_; i++) {
-        rhoACoeff[i] = new complex<double>[N * N];
-    }
-
-    // loop over longitudinal direction
-    for (int k = 0; k < Ny; k++) {
-        double g2muA;
-        for (int pos = 0; pos < N * N; pos++) {
-            for (int n = 0; n < Nc2m1_; n++) {
-                g2muA =
-                    param->getg()
-                    * sqrt(
-                        lat->cells[pos]->getg2mu2A() / static_cast<double>(Ny));
-                rhoACoeff[n][pos] = g2muA * random_ptr_->Gauss();
-            }
-        }
-
-        for (int n = 0; n < Nc2m1_; n++) {
-            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
-        }
-
-        // compute A^+
-#pragma omp parallel for
-        for (int localpos = 0; localpos < N * N; localpos++) {
-            int i = localpos / N;
-            int j = localpos % N;
-            double kt2, kx, ky;  // lattice momentum
-            kx = 2. * M_PI
-                 * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
-            ky = 2. * M_PI
-                 * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
-            kt2 = 4.
-                  * (sin(kx / 2.) * sin(kx / 2.) + sin(ky / 2.) * sin(ky / 2.));
-            if (m == 0) {
-                if (kt2 != 0) {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] =
-                            rhoACoeff[n][localpos] * (1. / (kt2));
-                    }
-                } else {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] = 0.;
-                    }
-                }
-            } else {
-                for (int n = 0; n < Nc2m1_; n++) {
-                    rhoACoeff[n][localpos] *=
-                        (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
-                }
-            }
-        }
-
-        // Fourier transform back A^+
-        for (int n = 0; n < Nc2m1_; n++) {
-            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
-        }
-        // compute U
-
-        // get Q_s^2 (and from that g^2mu^2) for a given \sum T_p and Y
-#pragma omp parallel
-        {
-            std::vector<double> in(Nc2m1_, 0.);
-            Matrix temp(Nc_, 1.);
-            Matrix tempNew(Nc_, 0.);
-
-#pragma omp for
-            for (int pos = 0; pos < N * N; pos++) {
-                for (int aa = 0; aa < Nc2m1_; aa++) {
-                    // expmCoeff will calculate exp(i in[a]t[a]),
-                    // so just multiply by -1 (not -i)
-                    in[aa] = -(rhoACoeff[aa][pos]).real();
-                }
-                tempNew = getUfromExponent(in);
-                temp = tempNew * lat->cells[pos]->getU();
-                // set U
-                lat->cells[pos]->setU(temp);
-            }
-        }
-
-    }  // Ny loop
-
-    // loop over longitudinal direction
-    for (int k = 0; k < Ny; k++) {
-        double g2muB;
-        for (int pos = 0; pos < N * N; pos++) {
-            for (int n = 0; n < Nc2m1_; n++) {
-                g2muB =
-                    param->getg()
-                    * sqrt(
-                        lat->cells[pos]->getg2mu2B() / static_cast<double>(Ny));
-                rhoACoeff[n][pos] = g2muB * random_ptr_->Gauss();
-            }
-        }
-
-        for (int n = 0; n < Nc2m1_; n++) {
-            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, 1);
-        }
-
-        // compute A^+
-#pragma omp parallel for
-        for (int localpos = 0; localpos < N * N; localpos++) {
-            int i = localpos / N;
-            int j = localpos % N;
-            double kt2, kx, ky;  // lattice momentum
-            kx = 2. * M_PI
-                 * (-0.5 + static_cast<double>(i) / static_cast<double>(N));
-            ky = 2. * M_PI
-                 * (-0.5 + static_cast<double>(j) / static_cast<double>(N));
-            kt2 = 4.
-                  * (sin(kx / 2.) * sin(kx / 2.) + sin(ky / 2.) * sin(ky / 2.));
-            if (m == 0) {
-                if (kt2 != 0) {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] =
-                            rhoACoeff[n][localpos] * (1. / (kt2));
-                    }
-                } else {
-                    for (int n = 0; n < Nc2m1_; n++) {
-                        rhoACoeff[n][localpos] = 0.;
-                    }
-                }
-            } else {
-                for (int n = 0; n < Nc2m1_; n++) {
-                    rhoACoeff[n][localpos] *=
-                        (1. / (kt2 + m * m)) * exp(-sqrt(kt2) * UVdamp);
-                }
-            }
-        }
-
-        // Fourier transform back A^+
-        for (int n = 0; n < Nc2m1_; n++) {
-            fft.fftnComplex(rhoACoeff[n], rhoACoeff[n], nn, -1);
-        }
-        // compute U
-
-#pragma omp parallel
-        {
-            std::vector<double> in(Nc2m1_, 0.);
-            Matrix temp(Nc_, 1.);
-            Matrix tempNew(Nc_, 0.);
-
-#pragma omp for
-            for (int pos = 0; pos < N * N; pos++) {
-                for (int aa = 0; aa < Nc2m1_; aa++) {
-                    // expmCoeff will calculate exp(i in[a]t[a]), so
-                    // just multiply by -1 (not -i)
-                    in[aa] = -(rhoACoeff[aa][pos]).real();
-                }
-                tempNew = getUfromExponent(in);
-                temp = tempNew * lat->cells[pos]->getU2();
-
-                // set U
-                lat->cells[pos]->setU2(temp);
-            }
-        }
-
-    }  // Ny loop
-
-    for (int ic = 0; ic < Nc2m1_; ic++) {
-        delete[] rhoACoeff[ic];
-    }
-    delete[] rhoACoeff;
-
-    // output U
-    if (param->getWriteWilsonLines() > 0 && param->getSaveSnapshots()) {
-        std::stringstream ss;
-        ss << "Initial_x_";
-        if (param->getUseJIMWLK()) {
-            ss << param->getJimwlk_x0() << "_";
-        } else {
-            ss << "0.001" << "_";
-        }
-        std::string wilsonfileHeader = ss.str();
-        lat->WriteWilsonLines(wilsonfileHeader, param, 1);  // nucleus A
-        lat->WriteWilsonLines(wilsonfileHeader, param, 2);  // nucleus B
-    }
-
-    messager << " Wilson lines V_A and V_B set on rank " << param->getMPIRank()
-             << ". ";
-    messager.flush("info");
-}
-
-void Init::readV2(Lattice *lat, Parameters *param, Glauber *glauber) {
-    // "Read" Wilson lines from the Lattice object, shift those according to
-    // the impact parameter
-    int AA1, AA2;
-    // int check=0;
-    if (param->getNucleonPositionsFromFile() == 0) {
-        AA1 = static_cast<int>(glauber->nucleusA1())
-              * param->getAverageOverNuclei();
-        AA2 = static_cast<int>(glauber->nucleusA2())
-              * param->getAverageOverNuclei();
-    } else {
-        AA1 = param->getA1FromFile();
-        AA2 = param->getA2FromFile();
-    }
-
-    const Matrix one(Nc_, 1.);
-    int N = param->getSize();
-
-    double L = param->getL();
-    double a = L / static_cast<double>(N);
-
-    int nn[2];
-    nn[0] = N;
-    nn[1] = N;
-
-    Matrix temp(Nc_, 1.);
-
-    double Re[9], Im[9];
-    double dummy;
-    double bb = param->get_firstb();
-    int added_lines = param->get_added_lines();
-
-    int added_lines_d2 = added_lines / 2;
-    int added_lines_d2_f = 0;
-    int N_m_added_lines_d2 = N - added_lines / 2;
-    int N_m_added_lines = N;  // - added_lines;
-
-    Lattice Lat_old(param, param->getNc(), param->getSize());
-
-    for (int i = 0; i < nn[0]; i++) {
-        for (int j = 0; j < nn[1]; j++) {
-            int pos = i * N + j;
-            Lat_old.cells[pos]->setU(lat->cells[pos]->getU());
-            Lat_old.cells[pos]->setU2(lat->cells[pos]->getU2());
-
-            lat->cells[pos]->setU(one_);
-            lat->cells[pos]->setU2(one_);
-        }
-    }
-
-    for (int i = 0; i < N_m_added_lines; i++) {
-        for (int j = 0; j < N_m_added_lines; j++) {
-            int pos_old = i * N_m_added_lines + j;
-            // U1
-            double xtemp = a * i - bb / 2.;
-            if (AA1 < 4 && AA2 > 1) {
-                xtemp = a * i;
-            } else if (AA2 < 4 && AA1 > 1) {
-                xtemp = a * i - bb;
-            }
-            int ix = xtemp / a;
-            if (ix >= added_lines_d2) {
-                int pos = (ix + added_lines_d2_f) * N + (j + added_lines_d2_f);
-                temp = Lat_old.cells[pos_old]->getU();
-                lat->cells[pos]->setU(temp);
-            }
-
-            // U2
-            double xtemp2 = a * i + bb / 2.;
-            if (AA1 < 4 && AA2 > 1) {
-                xtemp2 = a * i + bb;
-            } else if (AA2 < 4 && AA1 > 1) {
-                xtemp2 = a * i;
-            }
-            int ix2 = xtemp2 / a;
-            if (ix2 <= N_m_added_lines_d2) {
-                int pos2 =
-                    (ix2 + added_lines_d2_f) * N + (j + added_lines_d2_f);
-                temp = Lat_old.cells[pos_old]->getU2();
-                lat->cells[pos2]->setU2(temp);
-            }
-        }
-    }
-
-    /*
-   // test output_filename
-   stringstream strVOne_names;
-     strVOne_names << "V_second_1.txt";
-     string VOne_names;
-     VOne_names = strVOne_names.str();
-
-     stringstream strVTwo_names;
-     strVTwo_names << "V_second_2.txt";
-     string VTwo_names;
-     VTwo_names = strVTwo_names.str();
-
-       ofstream foutU(VOne_names.c_str(), std::ios::out);
-       foutU.precision(15);
-
-       for (int ix = 0; ix < N; ix++) {
-         for (int iy = 0; iy < N; iy++) // loop over all positions
-         {
-           int pos = ix * N + iy;
-           foutU << ix << " " << iy << " "
-                 << (lat->cells[pos]->getU()).MatrixToString() << endl;
-         }
-         foutU << endl;
-       }
-       foutU.close();
-
-       cout << "wrote " << strVOne_names.str() << endl;
-
-       ofstream foutU2(VTwo_names.c_str(), std::ios::out);
-       foutU2.precision(15);
-       for (int ix = 0; ix < N; ix++) {
-         for (int iy = 0; iy < N; iy++) // loop over all positions
-         {
-           int pos = ix * N + iy;
-           foutU2 << ix << " " << iy << " "
-                  << (lat->cells[pos]->getU2()).MatrixToString() << endl;
-         }
-         foutU2 << endl;
-       }
-       foutU2.close();
-       cout << "wrote " << strVTwo_names.str() << endl;
-     */
-
-    messager << " Wilson lines V_A and V_B set on rank " << param->getMPIRank()
-             << ". ";
-    messager.flush("info");
-}
-
-void Init::readVFromFile(Lattice *lat, Parameters *param, int format) {
-    // format 1 = plain text, 2 = binary
-
-    if (format > 2 or format < 1) {
-        messager << "Unknown format " << format
-                 << " when reading the initial Wilson lines, supported "
-                    "formats: 1,2";
-        messager.flush("info");
-        exit(1);
-    }
-
-    stringstream strVOne_name;
-    // strVOne_name << "V1-" << param->getMPIRank() << ".txt";
-    strVOne_name << "V-"
-                 << param->getEventId()
-                        + 2 * param->getSeed() * param->getMPISize();
-    if (format == 1) strVOne_name << ".txt";
-    string VOne_name;
-    VOne_name = strVOne_name.str();
-
-    stringstream strVTwo_name;
-    // strVTwo_name << "V2-" << param->getMPIRank() << ".txt";
-    strVTwo_name << "V-"
-                 << param->getEventId()
-                        + (1 + 2 * param->getSeed()) * param->getMPISize();
-    if (format == 1) strVTwo_name << ".txt";
-    string VTwo_name;
-    VTwo_name = strVTwo_name.str();
-
-    messager << "Reading Wilson lines from files " << VOne_name << " and "
-             << VTwo_name;
-    messager.flush("info");
-
-    if (format == 1) {
-        int N = param->getSize();
-
-        double L = param->getL();
-        double a = L / static_cast<double>(N);
-
-        int nn[2];
-        nn[0] = N;
-        nn[1] = N;
-
-        Matrix temp(Nc_, 1.);
-
-        double Re[9], Im[9];
-        double dummy;
-
-        ifstream finV1(VOne_name.c_str(), std::ios::in);
-
-        if (!finV1) {
-            messager << "File " << VOne_name << " not found. Exiting.";
-            messager.flush("info");
-            exit(1);
-        }
-
-        messager << "Reading Wilson line from file " << VOne_name << " ...";
-
-        // set V for nucleus A
-        for (int i = 0; i < nn[0]; i++) {
-            for (int j = 0; j < nn[1]; j++) {
-                finV1 >> dummy >> dummy >> Re[0] >> Im[0] >> Re[1] >> Im[1]
-                    >> Re[2] >> Im[2] >> Re[3] >> Im[3] >> Re[4] >> Im[4]
-                    >> Re[5] >> Im[5] >> Re[6] >> Im[6] >> Re[7] >> Im[7]
-                    >> Re[8] >> Im[8];
-
-                temp.set(0, 0, complex<double>(Re[0], Im[0]));
-                temp.set(0, 1, complex<double>(Re[1], Im[1]));
-                temp.set(0, 2, complex<double>(Re[2], Im[2]));
-                temp.set(1, 0, complex<double>(Re[3], Im[3]));
-                temp.set(1, 1, complex<double>(Re[4], Im[4]));
-                temp.set(1, 2, complex<double>(Re[5], Im[5]));
-                temp.set(2, 0, complex<double>(Re[6], Im[6]));
-                temp.set(2, 1, complex<double>(Re[7], Im[7]));
-                temp.set(2, 2, complex<double>(Re[8], Im[8]));
-
-                double bb = param->getb();
-                a = L / static_cast<double>(N);
-
-                double xtemp = a * i - bb / 2.;
-                int ix = xtemp / a;
-
-                if (ix < 0) continue;
-
-                int pos = ix * N + j;
-                lat->cells[pos]->setU(temp);
-            }
-        }
-
-        finV1.close();
-
-        ifstream finV2(VTwo_name.c_str(), std::ios::in);
-
-        if (!finV2) {
-            cerr << "File " << VTwo_name << " not found. Exiting." << endl;
-            exit(1);
-        }
-
-        cout << "Reading Wilson line from file " << VTwo_name << " ..." << endl;
-
-        // set V for nucleus B
-        for (int i = 0; i < nn[0]; i++) {
-            for (int j = 0; j < nn[1]; j++) {
-                finV2 >> dummy >> dummy >> Re[0] >> Im[0] >> Re[1] >> Im[1]
-                    >> Re[2] >> Im[2] >> Re[3] >> Im[3] >> Re[4] >> Im[4]
-                    >> Re[5] >> Im[5] >> Re[6] >> Im[6] >> Re[7] >> Im[7]
-                    >> Re[8] >> Im[8];
-
-                temp.set(0, 0, complex<double>(Re[0], Im[0]));
-                temp.set(0, 1, complex<double>(Re[1], Im[1]));
-                temp.set(0, 2, complex<double>(Re[2], Im[2]));
-                temp.set(1, 0, complex<double>(Re[3], Im[3]));
-                temp.set(1, 1, complex<double>(Re[4], Im[4]));
-                temp.set(1, 2, complex<double>(Re[5], Im[5]));
-                temp.set(2, 0, complex<double>(Re[6], Im[6]));
-                temp.set(2, 1, complex<double>(Re[7], Im[7]));
-                temp.set(2, 2, complex<double>(Re[8], Im[8]));
-
-                double bb = param->getb();
-                a = L / static_cast<double>(N);
-
-                double xtemp = a * i + bb / 2.;
-                int ix = xtemp / a;
-
-                if (ix >= N) continue;
-
-                int pos = ix * N + j;
-                lat->cells[pos]->setU2(temp);
-            }
-        }
-
-        finV2.close();
-    } else if (format == 2) {
-        std::ifstream InStream;
-        InStream.precision(15);
-        InStream.open(VOne_name.c_str(), std::ios::in | std::ios::binary);
-        int N;
-        double L, a, temp;
-
-        Matrix tempM(Nc_, 1.);
-
-        if (!InStream.good()) {
-            messager << "File " << VOne_name.c_str() << " does not exist!";
-            messager.flush("info");
-            exit(1);
-        }
-
-        if (InStream.is_open()) {
-            // READING IN PARAMETERS
-            InStream.read(reinterpret_cast<char *>(&N), sizeof(int));
-            InStream.read(reinterpret_cast<char *>(&Nc_), sizeof(int));
-            InStream.read(reinterpret_cast<char *>(&L), sizeof(double));
-            InStream.read(reinterpret_cast<char *>(&a), sizeof(double));
-            InStream.read(reinterpret_cast<char *>(&temp), sizeof(double));
-
-            if (N != param->getSize()) {
-                messager << "# ERROR wrong lattice size, data is " << N
-                         << " but you have specified " << param->getSize();
-                exit(0);
-            }
-            if (std::abs(L - param->getL()) > 1e-5) {
-                messager << "# ERROR grid length, data has " << L
-                         << " but you have specified " << param->getL();
-                exit(0);
-            }
-
-            // READING ACTUAL DATA
-            double ValueBuffer;
-            int INPUT_CTR = 0;
-            double re, im;
-            re = 0.;
-            im = 0.;
-
-            while (InStream.read(
-                reinterpret_cast<char *>(&ValueBuffer), sizeof(double))) {
-                if (INPUT_CTR % 2 == 0)  // this is the real part
-                {
-                    re = ValueBuffer;
-                } else  // this is the imaginary part, write then to
-                        // variable //
-                {
-                    im = ValueBuffer;
-                    int TEMPINDX = ((INPUT_CTR - 1) / 2);
-                    int PositionIndx = TEMPINDX / 9;
-
-                    // shift here by half an impact parameter
-                    int iy = PositionIndx / N;
-                    int ixIn = PositionIndx - N * iy;
-
-                    double bb = param->getb();
-                    a = L / static_cast<double>(N);
-
-                    double xtemp = a * ixIn - bb / 2.;
-
-                    int ix = round(xtemp / a);
-
-                    // cout << ixIn << " " << ix << endl;
-
-                    int MatrixIndx = TEMPINDX - PositionIndx * 9;
-                    int j = MatrixIndx / 3;
-                    int k = MatrixIndx - j * 3;
-
-                    int indx = N * ix + iy;
-                    if (indx >= N * N || indx < 0) {
-                        if (bb == 0) {
-                            messager << "Warning: datafile " << VOne_name
-                                     << " has an element " << indx
-                                     << " (iy=" << iy << ", ix=" << ix
-                                     << "), but the grid is N=" << N
-                                     << ". Element is (" << re << " + " << im
-                                     << "i), skipping it";
-                            messager.flush("info");
-                        }
-                        INPUT_CTR++;
-                        continue;
-                    }
-                    lat->cells[indx]->getU().set(j, k, complex<double>(re, im));
-                }
-                INPUT_CTR++;
-            }
-
-            InStream.close();
-
-            std::ifstream InStream2;
-            InStream2.precision(15);
-            InStream2.open(VTwo_name.c_str(), std::ios::in | std::ios::binary);
-            if (!InStream2.good()) {
-                messager << "File " << VTwo_name.c_str() << " does not exist!";
-                messager.flush("info");
-                exit(1);
-            }
-
-            INPUT_CTR = 0;
-            if (InStream2.is_open()) {
-                // READING IN PARAMETERS
-                InStream2.read(reinterpret_cast<char *>(&N), sizeof(int));
-                InStream2.read(reinterpret_cast<char *>(&Nc_), sizeof(int));
-                InStream2.read(reinterpret_cast<char *>(&L), sizeof(double));
-                InStream2.read(reinterpret_cast<char *>(&a), sizeof(double));
-                InStream2.read(reinterpret_cast<char *>(&temp), sizeof(double));
-
-                if (N != param->getSize()) {
-                    messager << "# ERROR wrong lattice size, data is " << N
-                             << " but you have specified " << param->getSize();
-                    messager.flush("info");
-                    exit(0);
-                }
-                if (std::abs(L - param->getL()) > 1e-5) {
-                    messager << "# ERROR grid length, dataas " << L
-                             << " but you have specified " << param->getL();
-                    messager.flush("info");
-                    exit(0);
-                }
-
-                // READING ACTUAL DATA
-                while (InStream2.read(
-                    reinterpret_cast<char *>(&ValueBuffer), sizeof(double))) {
-                    if (INPUT_CTR % 2 == 0)  // this is the real part
-                    {
-                        re = ValueBuffer;
-                    } else  // this is the imaginary part, write then to
-                            // variable //
-                    {
-                        im = ValueBuffer;
-
-                        int TEMPINDX = ((INPUT_CTR - 1) / 2);
-                        int PositionIndx = TEMPINDX / 9;
-
-                        // shift here by half an impact parameter
-                        int iy = PositionIndx / N;
-                        int ixIn = PositionIndx - N * iy;
-
-                        double bb = param->getb();
-                        a = L / static_cast<double>(N);
-
-                        double xtemp = a * ixIn + bb / 2.;
-
-                        int ix = round(xtemp / a);
-
-                        //                  if (ixIn != ix)
-                        //  cout << ixIn << " " << ix << endl;
-                        int MatrixIndx = TEMPINDX - PositionIndx * 9;
-                        int j = MatrixIndx / 3;
-                        int k = MatrixIndx - j * 3;
-
-                        int indx = N * ix + iy;
-
-                        if (indx >= N * N || indx < 0) {
-                            if (bb == 0) {
-                                messager << "Warning: datafile " << VTwo_name
-                                         << " has an element " << indx
-                                         << " (iy=" << iy << ", ix=" << ix
-                                         << "), but the grid is N=" << N
-                                         << ". Element is (" << re << " + "
-                                         << im << "i), skipping it";
-                                messager.flush("info");
-                            }
-                            INPUT_CTR++;
-                            continue;
-                        }
-                        lat->cells[indx]->getU2().set(
-                            j, k, complex<double>(re, im));
-                        // if (indx > 65000) cout << "Save ok" << endl;
-                    }
-                    INPUT_CTR++;
-                }
-                InStream2.close();
-            }
-        }
-    }
-
-    messager << " Wilson lines V_A and V_B set on rank " << param->getMPIRank()
-             << ". ";
-    messager.flush("info");
-}
-
-void Init::sampleImpactParameter(Parameters *param) {
-    const double bmin = param->getbmin();
-    const double bmax = param->getbmax();
-    double b = 0.;
-    double xb = random_ptr_->genrand64_real1();
-    if (param->getUseNucleus() == 0) {
-        // use b=0 fm for the constant g^2 mu case
-        messager << "Setting b=0 for constant color charge density case.";
-        messager.flush("info");
-        b = 0;
-    } else {
-        if (param->getLinearb() == 1) {
-            // use a linear probability distribution for b if we are doing
-            // nuclei
-            messager << "Sampling linearly distributed b between " << bmin
-                     << " and " << bmax << "fm. Found ";
-            b = sqrt((bmax * bmax - bmin * bmin) * xb + bmin * bmin);
-        } else {
-            // use a uniform distribution instead
-            messager << "Sampling uniformly distributed b between " << bmin
-                     << " and " << bmax << "fm. Found ";
-            b = (bmax - bmin) * xb + bmin;
-        }
-    }
-    param->setb(b);
-    double phiRP = 0.;
-    if (param->getRotateReactionPlane()) {
-        phiRP = 2 * M_PI * random_ptr_->genrand64_real2();
-    }
-    param->setPhiRP(phiRP);
-    messager << "b = " << b << " fm, phi_RP = " << phiRP;
-    messager.flush("info");
-
-    for (unsigned int i = 0; i < nucleusA_.size(); i++) {
-        nucleusA_.at(i).collided = 0;
-    }
-    for (unsigned int i = 0; i < nucleusB_.size(); i++) {
-        nucleusB_.at(i).collided = 0;
-    }
-}
-
-void Init::init(
-    Lattice *lat, Group *group, Parameters *param, Random *random,
-    Glauber *glauber, Initialization_method init_method) {
-    group_ptr_ = group;
-    random_ptr_ = random;
-
-    messager.info("Initializing fields ... ");
-
-    if (param->getUseNucleus() == 0) {
-        param->setSuccess(1);
-    } else {
-        readNuclearQs(param);
-    }
-
-    readInNucleusConfigs(
-        static_cast<int>(glauber->nucleusA1()), param->getlightNucleusOption(),
-        param->getPolarizationProjectile(),
-        param->getPolarizationProjectileJz(), nucleonPosArrA_);
-    readInNucleusConfigs(
-        static_cast<int>(glauber->nucleusA2()), param->getlightNucleusOption(),
-        param->getPolarizationTarget(), param->getPolarizationTargetJz(),
-        nucleonPosArrB_);
-
-    if (init_method == READ_WLINE_BINARY or init_method == READ_WLINE_TEXT) {
-        // to read Wilson lines from file
-        readVFromFile(lat, param, (init_method == READ_WLINE_BINARY) ? 2 : 1);
-        param->setSuccess(1);
-    } else {
-        // to generate your own Wilson lines
-        if (param->getUseNucleus() == 1) {
-            nucleusA_.clear();
-            nucleusB_.clear();
-            // populate the lists nucleusA_ and nucleusB_ with position data
-            sampleTA(param, random, glauber);
-            setColorChargeDensity(lat, param, random, glauber);
-            // sample color charges and find Wilson lines V_A and V_B
-            setV(lat, param);
-        }
-    }
-}
-
 void Init::shiftFieldsWithImpactParameter(Lattice *lat, Parameters *param) {
     messager.info("Shifting fields with impact parameter...");
     const double b = param->getb();
@@ -2455,8 +3070,8 @@ void Init::shiftFieldsWithImpactParameter(Lattice *lat, Parameters *param) {
     const int N = param->getSize();
     BufferLattice lat_tmp(param->getNc(), param->getSize());
     for (int ipos = 0; ipos < N * N; ipos++) {
-        lat_tmp.cells[ipos]->setbuffer1(lat->cells[ipos]->getU());
-        lat_tmp.cells[ipos]->setbuffer2(lat->cells[ipos]->getU2());
+        lat_tmp.buffer1[ipos] = lat->U[ipos];
+        lat_tmp.buffer2[ipos] = lat->U2[ipos];
     }
 
     const double L = param->getL();
@@ -2478,104 +3093,108 @@ void Init::shiftFieldsWithImpactParameter(Lattice *lat, Parameters *param) {
         int iyB = static_cast<int>((yB + L / 2.) / a);
 
         if (ixA < 0 || ixA >= N || iyA < 0 || iyA >= N) {
-            lat->cells[ipos]->setU(one_);
+            lat->U[ipos] = one_;
         } else {
             int posA = ixA * N + iyA;
-            lat->cells[ipos]->setU(lat_tmp.cells[posA]->getbuffer1());
+            lat->U[ipos] = lat_tmp.buffer1[posA];
         }
         if (ixB < 0 || ixB >= N || iyB < 0 || iyB >= N) {
-            lat->cells[ipos]->setU2(one_);
+            lat->U2[ipos] = one_;
         } else {
             int posB = ixB * N + iyB;
-            lat->cells[ipos]->setU2(lat_tmp.cells[posB]->getbuffer2());
+            lat->U2[ipos] = lat_tmp.buffer2[posB];
         }
     }
 }
 
 void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
-    messager.info("Finding fields in forward lightcone...");
-    // output Wilson lines (used also for the proton plots)
-    double L = param->getL();
     const int N = param->getSize();
-    const int N2 = N * N;
-    double a = L / N;  // lattice spacing in fm
-    double x, y;
+    const Matrix zero(Nc_, 0.);
+
+    // output Wilson lines (used also for the proton plots)
+    messager.info("Finding fields in forward lightcone...");
+
 #pragma omp parallel
     {
-        Matrix temp2(Nc_, 1);
-        Matrix Ux(Nc_, 1);
-        Matrix Uy(Nc_, 1);
-        Matrix UDx(Nc_, 1);
-        Matrix UDy(Nc_, 1);
-        Matrix UDx1(Nc_, 1);
-        Matrix UDy1(Nc_, 1);
+        Matrix temp2(Nc_, 0.);
+        Matrix Ux(Nc_, 0.);
+        Matrix Uy(Nc_, 0.);
+        Matrix UDx(Nc_, 0.);
+        Matrix UDy(Nc_, 0.);
+        Matrix UDx1(Nc_, 0.);
+        Matrix UDy1(Nc_, 0.);
 
-        Matrix Uplaq(Nc_, 1);
+        Matrix Uplaq(Nc_, 0.);
 
-        Matrix UDx2(Nc_, 1);
-        Matrix UDy2(Nc_, 1);
+        Matrix UD2(Nc_, 0.);
+        Matrix UDx2(Nc_, 0.);
+        Matrix UDy2(Nc_, 0.);
 
-        Matrix Ux1mUx2(Nc_, 1);
-        Matrix UDx1mUDx2(Nc_, 1);
-        Matrix Uy1mUy2(Nc_, 1);
-        Matrix UDy1mUDy2(Nc_, 1);
+        Matrix Ux1mUx2(Nc_, 0.);
+        Matrix UDx1mUDx2(Nc_, 0.);
+        Matrix Uy1mUy2(Nc_, 0.);
+        Matrix UDy1mUDy2(Nc_, 0.);
 
-// compute Ux(3) Uy(3) after the collision
+        // compute Ux(3) Uy(3) after the collision
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
+        for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            auto checkU = lat->cells[pos]->getU().trace();
+            auto checkU = lat->U[pos].trace();
             if (checkU != checkU) {
-                lat->cells[pos]->setU(one_);
+                lat->U[pos] = (one_);
             }
 
-            checkU = lat->cells[pos]->getU2().trace();
+            checkU = lat->U2[pos].trace();
             if (checkU != checkU) {
-                lat->cells[pos]->setU2(one_);
+                lat->U2[pos] = (one_);
             }
         }
 
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
+        for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            UDx = lat->cells[lat->pospX[pos]]->getU();
+            UDx = lat->U[lat->pospX[pos]];
             UDx.conjg();
-            lat->cells[pos]->setUx1(lat->cells[pos]->getU() * UDx);
+            lat->Ux1[pos] = (lat->U[pos] * UDx);
 
-            UDy = lat->cells[lat->pospY[pos]]->getU();
+            UDy = lat->U[lat->pospY[pos]];
             UDy.conjg();
-            lat->cells[pos]->setUy1(lat->cells[pos]->getU() * UDy);
+            lat->Uy1[pos] = (lat->U[pos] * UDy);
 
-            UDx = lat->cells[lat->pospX[pos]]->getU2();
+            UDx = lat->U2[lat->pospX[pos]];
             UDx.conjg();
-            lat->cells[pos]->setUx2(lat->cells[pos]->getU2() * UDx);
+            lat->Ux2[pos] = (lat->U2[pos] * UDx);
 
-            UDy = lat->cells[lat->pospY[pos]]->getU2();
+            UDy = lat->U2[lat->pospY[pos]];
             UDy.conjg();
-            lat->cells[pos]->setUy2(lat->cells[pos]->getU2() * UDy);
+            lat->Uy2[pos] = (lat->U2[pos] * UDy);
         }
         // -----------------------------------------------------------------
         // from Ux(1,2) and Uy(1,2) compute Ux(3) and Uy(3):
 
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
+        for (int pos = 0; pos < N * N; pos++) {
             // loops over all cells
-            UDx1 = lat->cells[pos]->getUx1();
-            UDx2 = lat->cells[pos]->getUx2();
-            // bool status = findUInForwardLightconeBjoern(UDx1, UDx2,
-            // temp2);
-            bool status = findUInForwardLightconeChun(UDx1, UDx2, temp2);
-            lat->cells[pos]->setUx(temp2);
+            UDx1 = lat->Ux1[pos];
+            UDx2 = lat->Ux2[pos];
+            // bool status = findUInForwardLightconeBjoern(UDx1, UDx2, temp2);
+            const std::uint64_t retrySeedX = forwardLightconeRetrySeed(
+                param->getRandomSeed(), param->getEventId(), pos, 0);
+            bool status =
+                findUInForwardLightconeChun(UDx1, UDx2, temp2, retrySeedX);
+            lat->Ux[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
                      << " y = " << pos % param->getSize() << endl;
             }
 
-            UDy1 = lat->cells[pos]->getUy1();
-            UDy2 = lat->cells[pos]->getUy2();
+            UDy1 = lat->Uy1[pos];
+            UDy2 = lat->Uy2[pos];
             // status = findUInForwardLightconeBjoern(UDy1, UDy2, temp2);
-            status = findUInForwardLightconeChun(UDy1, UDy2, temp2);
-            lat->cells[pos]->setUy(temp2);
+            const std::uint64_t retrySeedY = forwardLightconeRetrySeed(
+                param->getRandomSeed(), param->getEventId(), pos, 1);
+            status = findUInForwardLightconeChun(UDy1, UDy2, temp2, retrySeedY);
+            lat->Uy[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
                      << " y = " << pos % param->getSize() << endl;
@@ -2585,24 +3204,29 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
 // compute initial electric field
 // with minus ax, ay
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
+        for (int pos = 0; pos < N * N; pos++) {
             // x part in sum:
-            Ux1mUx2 = lat->cells[pos]->getUx1() - lat->cells[pos]->getUx2();
-            UDx1mUDx2 = Ux1mUx2;
-            UDx1mUDx2.conjg();
+            Ux1mUx2 = lat->Ux1[pos] - lat->Ux2[pos];
+            UDx1 = lat->Ux1[pos];
+            UDx1.conjg();
+            UDx2 = lat->Ux2[pos];
+            UDx2.conjg();
+            UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[pos]->getUx();
+            Ux = lat->Ux[pos];
             UDx = Ux;
             UDx.conjg();
 
             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
 
-            Ux1mUx2 = lat->cells[lat->posmX[pos]]->getUx1()
-                      - lat->cells[lat->posmX[pos]]->getUx2();
-            UDx1mUDx2 = Ux1mUx2;
-            UDx1mUDx2.conjg();
+            Ux1mUx2 = lat->Ux1[lat->posmX[pos]] - lat->Ux2[lat->posmX[pos]];
+            UDx1 = lat->Ux1[lat->posmX[pos]];
+            UDx1.conjg();
+            UDx2 = lat->Ux2[lat->posmX[pos]];
+            UDx2.conjg();
+            UDx1mUDx2 = UDx1 - UDx2;
 
-            Ux = lat->cells[lat->posmX[pos]]->getUx();
+            Ux = lat->Ux[lat->posmX[pos]];
             UDx = Ux;
             UDx.conjg();
 
@@ -2610,11 +3234,14 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
                 temp2 - UDx * Ux1mUx2 + Ux1mUx2 + UDx1mUDx2 * Ux - UDx1mUDx2;
 
             // y part in sum
-            Uy1mUy2 = lat->cells[pos]->getUy1() - lat->cells[pos]->getUy2();
-            UDy1mUDy2 = Uy1mUy2;
-            UDy1mUDy2.conjg();
+            Uy1mUy2 = lat->Uy1[pos] - lat->Uy2[pos];
+            UDy1 = lat->Uy1[pos];
+            UDy1.conjg();
+            UDy2 = lat->Uy2[pos];
+            UDy2.conjg();
+            UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[pos]->getUy();
+            Uy = lat->Uy[pos];
             UDy = Uy;
             UDy.conjg();
 
@@ -2622,131 +3249,129 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
             temp2 =
                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
 
-            Uy1mUy2 = lat->cells[lat->posmY[pos]]->getUy1()
-                      - lat->cells[lat->posmY[pos]]->getUy2();
-            UDy1mUDy2 = Uy1mUy2;
-            UDy1mUDy2.conjg();
+            Uy1mUy2 = lat->Uy1[lat->posmY[pos]] - lat->Uy2[lat->posmY[pos]];
+            UDy1 = lat->Uy1[lat->posmY[pos]];
+            UDy1.conjg();
+            UDy2 = lat->Uy2[lat->posmY[pos]];
+            UDy2.conjg();
+            UDy1mUDy2 = UDy1 - UDy2;
 
-            Uy = lat->cells[lat->posmY[pos]]->getUy();
+            Uy = lat->Uy[lat->posmY[pos]];
             UDy = Uy;
             UDy.conjg();
 
             temp2 =
                 temp2 - UDy * Uy1mUy2 + Uy1mUy2 + UDy1mUDy2 * Uy - UDy1mUDy2;
 
-            lat->cells[pos]->setE1((1. / 8.) * temp2);
+            lat->U[pos] = ((1. / 8.) * temp2);
         }
 
-//// with plus ax, ay
-// #pragma omp for
-//         for (int pos = 0; pos < N2; pos++) {
-//             // x part in sum:
-//             Ux1mUx2 = lat->cells[pos]->getUx1() - lat->cells[pos]->getUx2();
-//             UDx1 = lat->cells[pos]->getUx1();
-//             UDx1.conjg();
-//             UDx2 = lat->cells[pos]->getUx2();
-//             UDx2.conjg();
-//             UDx1mUDx2 = UDx1 - UDx2;
-//
-//             Ux = lat->cells[pos]->getUx();
-//             UDx = Ux;
-//             UDx.conjg();
-//
-//             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
-//
-//             Ux1mUx2 = lat->cells[lat->pospX[pos]]->getUx1()
-//                       - lat->cells[lat->pospX[pos]]->getUx2();
-//             UDx1 = lat->cells[lat->pospX[pos]]->getUx1();
-//             UDx1.conjg();
-//             UDx2 = lat->cells[lat->pospX[pos]]->getUx2();
-//             UDx2.conjg();
-//             UDx1mUDx2 = UDx1 - UDx2;
-//
-//             Ux = lat->cells[lat->pospX[pos]]->getUx();
-//             UDx = Ux;
-//             UDx.conjg();
-//
-//             temp2 =
-//                 temp2 - UDx * Ux1mUx2 + Ux1mUx2 + UDx1mUDx2 * Ux - UDx1mUDx2;
-//
-//             // y part in sum
-//             Uy1mUy2 = lat->cells[pos]->getUy1() - lat->cells[pos]->getUy2();
-//             UDy1 = lat->cells[pos]->getUy1();
-//             UDy1.conjg();
-//             UDy2 = lat->cells[pos]->getUy2();
-//             UDy2.conjg();
-//             UDy1mUDy2 = UDy1 - UDy2;
-//
-//             Uy = lat->cells[pos]->getUy();
-//             UDy = Uy;
-//             UDy.conjg();
-//
-//             // y part of the sum:
-//             temp2 =
-//                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
-//
-//             Uy1mUy2 = lat->cells[lat->pospY[pos]]->getUy1()
-//                       - lat->cells[lat->pospY[pos]]->getUy2();
-//             UDy1 = lat->cells[lat->pospY[pos]]->getUy1();
-//             UDy1.conjg();
-//             UDy2 = lat->cells[lat->pospY[pos]]->getUy2();
-//             UDy2.conjg();
-//             UDy1mUDy2 = UDy1 - UDy2;
-//
-//             Uy = lat->cells[lat->pospY[pos]]->getUy();
-//             UDy = Uy;
-//             UDy.conjg();
-//
-//             temp2 =
-//                 temp2 - UDy * Uy1mUy2 + Uy1mUy2 + UDy1mUDy2 * Uy - UDy1mUDy2;
-//
-//             lat->cells[pos]->setE2((1. / 8.) * temp2);
-//         }
+        // with plus ax, ay
+#pragma omp for
+        for (int pos = 0; pos < N * N; pos++) {
+            // x part in sum:
+            Ux1mUx2 = lat->Ux1[pos] - lat->Ux2[pos];
+            UDx1 = lat->Ux1[pos];
+            UDx1.conjg();
+            UDx2 = lat->Ux2[pos];
+            UDx2.conjg();
+            UDx1mUDx2 = UDx1 - UDx2;
 
+            Ux = lat->Ux[pos];
+            UDx = Ux;
+            UDx.conjg();
+
+            temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
+
+            Ux1mUx2 = lat->Ux1[lat->pospX[pos]] - lat->Ux2[lat->pospX[pos]];
+            UDx1 = lat->Ux1[lat->pospX[pos]];
+            UDx1.conjg();
+            UDx2 = lat->Ux2[lat->pospX[pos]];
+            UDx2.conjg();
+            UDx1mUDx2 = UDx1 - UDx2;
+
+            Ux = lat->Ux[lat->pospX[pos]];
+            UDx = Ux;
+            UDx.conjg();
+
+            temp2 =
+                temp2 - UDx * Ux1mUx2 + Ux1mUx2 + UDx1mUDx2 * Ux - UDx1mUDx2;
+
+            // y part in sum
+            Uy1mUy2 = lat->Uy1[pos] - lat->Uy2[pos];
+            UDy1 = lat->Uy1[pos];
+            UDy1.conjg();
+            UDy2 = lat->Uy2[pos];
+            UDy2.conjg();
+            UDy1mUDy2 = UDy1 - UDy2;
+
+            Uy = lat->Uy[pos];
+            UDy = Uy;
+            UDy.conjg();
+
+            // y part of the sum:
+            temp2 =
+                temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
+
+            Uy1mUy2 = lat->Uy1[lat->pospY[pos]] - lat->Uy2[lat->pospY[pos]];
+            UDy1 = lat->Uy1[lat->pospY[pos]];
+            UDy1.conjg();
+            UDy2 = lat->Uy2[lat->pospY[pos]];
+            UDy2.conjg();
+            UDy1mUDy2 = UDy1 - UDy2;
+
+            Uy = lat->Uy[lat->pospY[pos]];
+            UDy = Uy;
+            UDy.conjg();
+
+            temp2 =
+                temp2 - UDy * Uy1mUy2 + Uy1mUy2 + UDy1mUDy2 * Uy - UDy1mUDy2;
+
+            lat->U2[pos] = ((1. / 8.) * temp2);
+        }
 // compute the plaquette
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
-            UDx = lat->cells[lat->pospY[pos]]->getUx();
-            UDy = lat->cells[pos]->getUy();
+        for (int pos = 0; pos < N * N; pos++) {
+            UDx = lat->Ux[lat->pospY[pos]];
+            UDy = lat->Uy[pos];
             UDx.conjg();
             UDy.conjg();
 
-            Uplaq = lat->cells[pos]->getUx()
-                    * (lat->cells[lat->pospX[pos]]->getUy() * (UDx * UDy));
-            lat->cells[pos]->setUplaq(Uplaq);
+            Uplaq = lat->Ux[pos] * (lat->Uy[lat->pospX[pos]] * (UDx * UDy));
+            lat->Uy1[pos] = (Uplaq);
         }
 
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
-            // AM = (lat->cells[pos]->getE1());
-            // //+lat->cells[pos]->getAetaP()); AP =
-            // (lat->cells[pos]->getE2()); //+lat->cells[pos]->getAetaP());
+        for (int pos = 0; pos < N * N; pos++) {
+            // AM = (lat->U[pos]); //+lat->cells[pos]->getAetaP());
+            // AP = (lat->U2[pos]); //+lat->cells[pos]->getAetaP());
 
-            // this is pi in lattice units as needed for the evolution.
-            // (later, the a^4 gives the right units for the energy density
-            lat->cells[pos]->setpi(
-                complex<double>(0., -2. / param->getg())
-                * (lat->cells[pos]->getE1()));
+            // this is pi in lattice units as needed for the evolution. (later,
+            // the a^4 gives the right units for the energy density
+            lat->Ux2[pos] =
+                (complex<double>(0., -2. / param->getg()) * (lat->U[pos]));
             // factor -2 because I have A^eta (note the 1/8 before)
             // but want \pi (E^z).
 
-            // lat->cells[pos]->setpi(complex<double>(0.,-1./param->getg())*(AM+AP));
-            // // factor -2 because I have A^eta (note the 1/8 before) but
-            // want
+            // lat->Ux2[pos] = (complex<double>(0.,-1./param->getg())*(AM+AP));
+            // // factor -2 because I have A^eta (note the 1/8 before) but want
             // \pi (E^z).
         }
 
-        const Matrix zero(Nc_, 0.);
 #pragma omp for
-        for (int pos = 0; pos < N2; pos++) {
-            lat->cells[pos]->setE1(zero);
-            lat->cells[pos]->setE2(zero);
-            lat->cells[pos]->setphi(zero);
+        for (int pos = 0; pos < N * N; pos++) {
+            lat->U[pos] = (zero);
+            lat->U2[pos] = (zero);
+            lat->Uy2[pos] = (zero);
 
             // reset the Ux1 to be used for other purposes later
-            // lat->cells[pos]->setUx1(one_);
+            lat->Ux1[pos] = (one_);
         }
-    }  // omp block
+    }
+
+    // -----------------------------------------------------------------------------
+    // finish
+    // -----------------------------------------------------------------------------
 }
 
 void Init::multiplicity(Lattice *lat, Parameters *param) {
@@ -2863,7 +3488,7 @@ void Init::generate_nucleus_configuration_with_woods_saxon(
         if (idx_array[i] < Z) {
             rv.proton = 1;
         } else {
-            rv.proton = 1;
+            rv.proton = 0;
         }
         nucleus.push_back(rv);
     }
@@ -3176,9 +3801,14 @@ void Init::recenter_nucleus(std::vector<ReturnValue> &nucleus) {
     }
 }
 
-void Init::assignProtons(std::vector<ReturnValue> &nucleus, const int Z) {
+void Init::assignProtons(
+    Random *random, std::vector<ReturnValue> &nucleus, const int Z) {
     // randomly assign Z nucleons to be protons inside the nucleus
-    std::shuffle(nucleus.begin(), nucleus.end(), *random_ptr_->getRanGen());
+    // Fisher–Yates shuffle using the existing Random instance.
+    for (int i = static_cast<int>(nucleus.size()) - 1; i > 0; --i) {
+        const int j = static_cast<int>(random->genrand64_real2() * (i + 1));
+        std::swap(nucleus[i], nucleus[j]);
+    }
     for (unsigned int i = 0; i < nucleus.size(); i++) {
         if (static_cast<int>(i) < std::abs(Z)) {
             nucleus.at(i).proton = 1;
@@ -3260,7 +3890,7 @@ void Init::sampleQsNormalization(
     Random *random, Parameters *param, const int Nq,
     vector<double> &gauss_array) {
     const double QsSmearWidth = param->getSmearingWidth();
-    gauss_array.resize(Nq, 1.);  // default norm = 1
+    gauss_array.assign(Nq, 1.);  // default norm = 1
     if (param->getSmearQs() == 1) {
         // introduce a log-normal distribution for Qs normalization
         // dividing by exp(0.5 sigma^2) to ensure the mean is 1
@@ -3411,7 +4041,8 @@ bool Init::findUInForwardLightconeBjoern(Matrix &U1, Matrix &U2, Matrix &Usol) {
     return (success);
 }
 
-bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
+bool Init::findUInForwardLightconeChun(
+    Matrix &U1, Matrix &U2, Matrix &Usol, std::uint64_t retrySeed) {
     const int maxIterations = 2000;
     const int maxRetrys = 200;
 
@@ -3447,6 +4078,10 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
 
     int iter = 0;
     int nRestart = 0;
+    std::uint64_t retryDraw = 0;
+    auto nextRetryGaussian = [&]() {
+        return deterministicRetryGaussian(retrySeed, retryDraw++);
+    };
     while (Fzero > 1e-6 && iter < maxIterations && nRestart < maxRetrys) {
         iter++;
 
@@ -3515,7 +4150,7 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
             }
         } else {
             for (int ai = 0; ai < Nc2m1_; ai++) {
-                alpha[ai] = random_ptr_->Gauss();
+                alpha[ai] = nextRetryGaussian();
             }
         }
         Usol = getUfromExponent(alpha) * U0;
@@ -3528,7 +4163,7 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
         }
         if (iter == maxIterations) {
             for (int ai = 0; ai < Nc2m1_; ai++) {
-                alpha[ai] = random_ptr_->Gauss();
+                alpha[ai] = nextRetryGaussian();
             }
             Usol = getUfromExponent(alpha) * U0;
             Usoldagger = Usol;
@@ -3551,19 +4186,30 @@ bool Init::findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol) {
 }
 
 Matrix Init::getUfromExponent(std::vector<double> &in) {
-    Matrix tempM(Nc_, 0.);
+    Matrix tempM(Nc_, Matrix::noInit);
+    complex<double> U[9];
 
-    // expmCoeff wil calculate exp(i in[a]t[a])
-    auto U = tempM.expmCoeff(in, Nc_);
+    // expmCoeff calculates the coefficients of exp(i in[a] t[a]).  Build
+    // the 3x3 matrix directly from the fixed SU(3) generators instead of
+    // allocating a coefficient vector and materializing eight scaled Matrix
+    // temporaries plus the chained sums.
+    tempM.expmCoeff(in.data(), U);
     if (std::abs(U[0].real()) < 1e-15) {
         tempM = one_;
     } else {
-        tempM =
-            (U[0] * one_ + U[1] * group_ptr_->getT(0)
-             + U[2] * group_ptr_->getT(1) + U[3] * group_ptr_->getT(2)
-             + U[4] * group_ptr_->getT(3) + U[5] * group_ptr_->getT(4)
-             + U[6] * group_ptr_->getT(5) + U[7] * group_ptr_->getT(6)
-             + U[8] * group_ptr_->getT(7));
+        const complex<double> I(0., 1.);
+        const double invSqrt3 = 1. / std::sqrt(3.);
+
+        tempM.set(0, 0, U[0] + 0.5 * U[3] + 0.5 * invSqrt3 * U[8]);
+        tempM.set(1, 1, U[0] - 0.5 * U[3] + 0.5 * invSqrt3 * U[8]);
+        tempM.set(2, 2, U[0] - invSqrt3 * U[8]);
+
+        tempM.set(0, 1, 0.5 * (U[1] - I * U[2]));
+        tempM.set(1, 0, 0.5 * (U[1] + I * U[2]));
+        tempM.set(0, 2, 0.5 * (U[4] - I * U[5]));
+        tempM.set(2, 0, 0.5 * (U[4] + I * U[5]));
+        tempM.set(1, 2, 0.5 * (U[6] - I * U[7]));
+        tempM.set(2, 1, 0.5 * (U[6] + I * U[7]));
     }
-    return (tempM);
+    return tempM;
 }

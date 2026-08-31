@@ -87,6 +87,10 @@ class Parameters {
                        // in IP-Sat for nuclei)
     int writeOutputs;  // decide whether to write (1) or not write (0) large
                        // output files (like hydro input data)
+    int writeEpsilonUHydro;  // run the flow-velocity/hydro-output calculation
+                             // (1) or write only Tmunu at measurement times (0)
+    int writeTmunuBinary;    // write Tmunu as compact binary .ipgt (1) or
+                             // formatted text .dat (0)
     int writeOutputsToHDF5;  // decide whether to write (1) or not write (0)
                              // output files to one hdf5 file
     int writeEvolution;    // decide whether to write (1) or not write (0) time
@@ -94,9 +98,14 @@ class Parameters {
     int writeWilsonLines;  // decide whether to write (1) in text or (2)
                            // in binary format or not write (0) generated
                            // Wilson lines (before any evolution)
-    int readInitialWilsonLines;  // decide wheter to generate initial Wilson
-                                 // lines (0), or read these in plain text (1)
-                                 // or in binary format (2)
+    int writeInitialWilsonLines;  // decide whether to write (1) in text or
+                                  // (2) in binary format or not write (0)
+                                  // the Wilson lines built at t=0, before any
+                                  // JIMWLK evolution (see writeWilsonLines
+                                  // for evolved/snapshotted lines)
+    int readInitialWilsonLines;   // decide wheter to generate initial Wilson
+                                  // lines (0), or read these in plain text (1)
+                                  // or in binary format (2)
     unsigned long long int randomSeed;  // stores the random seed used (so the
                                         // event can be reproduced)
     std::string
@@ -485,12 +494,18 @@ class Parameters {
     int getLinearb() { return linearb; }
     void setWriteOutputs(int x) { writeOutputs = x; };
     int getWriteOutputs() { return writeOutputs; }
+    void setWriteEpsilonUHydro(int x) { writeEpsilonUHydro = x; };
+    int getWriteEpsilonUHydro() { return writeEpsilonUHydro; }
+    void setWriteTmunuBinary(int x) { writeTmunuBinary = x; };
+    int getWriteTmunuBinary() { return writeTmunuBinary; }
     void setWriteOutputsToHDF5(int x) { writeOutputsToHDF5 = x; };
     int getWriteOutputsToHDF5() { return writeOutputsToHDF5; }
     void setWriteEvolution(int x) { writeEvolution = x; };
     int getWriteEvolution() { return writeEvolution; }
     void setWriteWilsonLines(int x) { writeWilsonLines = x; }
     int getWriteWilsonLines() { return writeWilsonLines; }
+    void setWriteInitialWilsonLines(int x) { writeInitialWilsonLines = x; }
+    int getWriteInitialWilsonLines() { return writeInitialWilsonLines; }
     void setReadInitialWilsonLines(int x) { readInitialWilsonLines = x; }
     int getReadInitialWilsonLines() { return readInitialWilsonLines; }
     void setNucleonPositionsFromFile(int x) { nucleonPositionsFromFile = x; }
