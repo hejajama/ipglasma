@@ -150,52 +150,6 @@ void Lattice::WriteWilsonLines(
     }
 }
 
-void Lattice::WriteSU3Matricies(std::string fileprefix, Parameters *param) {
-    const int N = param->getSize();
-
-    std::stringstream strVOne_name;
-    strVOne_name << fileprefix << "Phi-"
-                 << param->getEventId()
-                        + 2 * param->getSeed() * param->getMPISize()
-                 << ".txt";
-
-    std::stringstream strVTwo_name;
-    strVTwo_name << fileprefix << "Pi-"
-                 << param->getEventId()
-                        + (1 + 2 * param->getSeed()) * param->getMPISize()
-                 << ".txt";
-
-    // Output in text -- Uy2/phi, Ux2/pi (see the field-alias comment above).
-    std::ofstream foutU(strVOne_name.str().c_str(), std::ios::out);
-    foutU.precision(15);
-
-    for (int ix = 0; ix < N; ix++) {
-        for (int iy = 0; iy < N; iy++) {
-            int pos = ix * N + iy;
-            foutU << ix << " " << iy << " " << Uy2[pos].MatrixToString()
-                  << std::endl;
-        }
-        foutU << std::endl;
-    }
-    foutU.close();
-
-    std::cout << "wrote " << strVOne_name.str() << std::endl;
-
-    std::ofstream foutU2(strVTwo_name.str().c_str(), std::ios::out);
-    foutU2.precision(15);
-    for (int ix = 0; ix < N; ix++) {
-        for (int iy = 0; iy < N; iy++) {
-            int pos = ix * N + iy;
-            foutU2 << ix << " " << iy << " " << Ux2[pos].MatrixToString()
-                   << std::endl;
-        }
-        foutU2 << std::endl;
-    }
-    foutU2.close();
-
-    std::cout << "wrote " << strVTwo_name.str() << std::endl;
-}
-
 BufferLattice::BufferLattice(int N, int length) {
     Nc = N;
     requireSU3Lattice(Nc);

@@ -52,8 +52,6 @@ class Lattice {
     // periodic x-snapshots.
     void WriteWilsonLines(
         std::string fileprefix, Parameters *param, const int iA);
-    // Write phi (from Uy2) and pi (from Ux2) to disk in text format.
-    void WriteSU3Matricies(std::string fileprefix, Parameters *param);
 };
 
 class BufferLattice {
