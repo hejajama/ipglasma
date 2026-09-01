@@ -867,7 +867,6 @@ void Init::setColorChargeDensity(
     Lattice *lat, Parameters *param, Random *random, Glauber *glauber) {
     IPG_PROFILE_SCOPE("initialization.color_charge_density");
     std::cout << "set color charge density ..." << std::endl;
-    int pos, posA, posB;
     int N = param->getSize();
     const int A1 = nucleusA_.size();
     const int A2 = nucleusB_.size();
@@ -881,9 +880,6 @@ void Init::setColorChargeDensity(
     //  static_cast<int>(glauber->nucleusA2()) * param->getAverageOverNuclei();
     //}
 
-    int Npart = 0;
-    int Ncoll = 0;
-    double g2mu2A, g2mu2B;
     const double impact_b = param->getb();
     double r;
     double L = param->getL();
@@ -911,14 +907,6 @@ void Init::setColorChargeDensity(
 
     double yIn = rapidity;  // param->getRapidity();
     double a = L / N;       // lattice spacing in fm
-    double dx, dy, dij;
-    double d2 = param->getSigmaNN() / (M_PI * 10.);  // in fm^2
-    double averageQs = 0.;
-    double averageQs2 = 0.;
-    double averageQs2Avg = 0.;
-    double averageQs2min = 0.;
-    double averageQs2min2 = 0.;
-    int count = 0;
     double nucleiInAverage;
     nucleiInAverage = static_cast<double>(param->getAverageOverNuclei());
 
@@ -1055,7 +1043,6 @@ void Init::setColorChargeDensity(
         cout << "Using smooth nucleus for test purposes. Does not include "
                 "deformation."
              << endl;
-        Npart = 2;  // avoid break below
         double xA, xB;
         double y;
         double T;
@@ -1228,107 +1215,14 @@ void Init::setColorChargeDensity(
         }
     }
 
-    if (param->getUseSmoothNucleus() == 0) {
-        stringstream strNcoll_name;
-        strNcoll_name << "NcollList" << param->getEventId() << ".dat";
-        string Ncoll_name;
-        Ncoll_name = strNcoll_name.str();
+    // Npart, Ncoll, the per-nucleon "collided" flags, and the derived
+    // averageQs/Tpp/success diagnostics are NOT computed here. This function
+    // is always called with the impact parameter forced to 0 (each nucleus
+    // built in its own centered frame, see Init::init()), so any collision
+    // geometry computed against that fake b would be meaningless. The real
+    // collision geometry is computed once, against the actual sampled
+    // impact parameter, in computeCollisionGeometryQuantities().
 
-        ofstream foutNcoll(Ncoll_name.c_str(), std::ios::out);
-
-        if (param->getGaussianWounding() == 0) {
-            for (int i = 0; i < A1; i++) {
-                for (int j = 0; j < A2; j++) {
-                    dx = nucleusB_.at(j).x - nucleusA_.at(i).x;
-                    dy = nucleusB_.at(j).y - nucleusA_.at(i).y;
-                    dij = dx * dx + dy * dy;
-                    if (dij < d2) {
-                        foutNcoll
-                            << (nucleusB_.at(j).x + nucleusA_.at(i).x) / 2.
-                            << " "
-                            << (nucleusB_.at(j).y + nucleusA_.at(i).y) / 2.
-                            << endl;
-                        Ncoll++;
-                        nucleusB_.at(j).collided = 1;
-                        nucleusA_.at(i).collided = 1;
-                    }
-                }
-            }
-        } else {
-            double p;
-            double G = 0.92;
-            double ran;
-
-            for (int i = 0; i < A1; i++) {
-                for (int j = 0; j < A2; j++) {
-                    dx = nucleusB_.at(j).x - nucleusA_.at(i).x;
-                    dy = nucleusB_.at(j).y - nucleusA_.at(i).y;
-                    dij = dx * dx + dy * dy;
-
-                    p = G * exp(-G * dij / d2);  // Gaussian profile
-
-                    ran = random->genrand64_real1();
-
-                    if (ran < p) {
-                        foutNcoll
-                            << (nucleusB_.at(j).x + nucleusA_.at(i).x) / 2.
-                            << " "
-                            << (nucleusB_.at(j).y + nucleusA_.at(i).y) / 2.
-                            << endl;
-                        Ncoll++;
-                        nucleusB_.at(j).collided = 1;
-                        nucleusA_.at(i).collided = 1;
-                    }
-                }
-            }
-        }
-
-        foutNcoll.close();
-
-        stringstream strNpart_name;
-        strNpart_name << "NpartList" << param->getEventId() << ".dat";
-        string Npart_name;
-        Npart_name = strNpart_name.str();
-
-        ofstream foutNpart(Npart_name.c_str(), std::ios::out);
-
-        for (int i = 0; i < A1; i++) {
-            foutNpart << nucleusA_.at(i).x << " " << nucleusA_.at(i).y << " "
-                      << nucleusA_.at(i).proton << " "
-                      << nucleusA_.at(i).collided << endl;
-        }
-        foutNpart << endl;
-        for (int i = 0; i < A2; i++) {
-            foutNpart << nucleusB_.at(i).x << " " << nucleusB_.at(i).y << " "
-                      << nucleusB_.at(i).proton << " "
-                      << nucleusB_.at(i).collided << endl;
-        }
-        foutNpart.close();
-
-        // in p+p assume that they collided in any case
-        if (A1 == 1 && A2 == 1) {
-            nucleusB_.at(0).collided = 1;
-            nucleusA_.at(0).collided = 1;
-        }
-
-        Npart = 0;
-
-        for (int i = 0; i < A1; i++) {
-            if (nucleusA_.at(i).collided == 1) Npart++;
-        }
-
-        for (int i = 0; i < A2; i++) {
-            if (nucleusB_.at(i).collided == 1) Npart++;
-        }
-
-        param->setNpart(Npart);
-
-        if (param->getUseFixedNpart() != 0
-            && Npart != param->getUseFixedNpart()) {
-            cout << "current Npart = " << Npart << endl;
-            return;
-        }
-    }
     // get Q_s^2 (and from that g^2mu^2) for a given \sum T_p and Y
 #pragma omp parallel
     {
@@ -1534,269 +1428,7 @@ void Init::setColorChargeDensity(
         }
     }
 
-    count = 0;
-    double Tpp = 0.;
-    double x, xm, y, ym;
-    double alphas = 0.;
-    int check = 0;
-    for (int ix = 0; ix < N; ix++)  // loop over all positions
-    {
-        for (int iy = 0; iy < N; iy++) {
-            check = 0;
-            pos = ix * N + iy;
-            x = -L / 2. + a * ix;
-            y = -L / 2. + a * iy;
-            //    outvalue = lat->cells[pos]->getg2mu2A();
-
-            posA = pos;
-            posB = pos;
-
-            if (posA > 0 && posA < (N - 1) * N + N - 1) {
-                g2mu2A = lat->cells[posA]->getg2mu2A();
-            } else
-                g2mu2A = 0;
-
-            if (posB > 0 && posB < (N - 1) * N + N - 1) {
-                g2mu2B = lat->cells[posB]->getg2mu2B();
-            } else
-                g2mu2B = 0;
-
-            if (g2mu2B >= g2mu2A) {
-                averageQs2min2 += g2mu2A * param->getQsmuRatio()
-                                  * param->getQsmuRatio() / a / a * hbarc
-                                  * hbarc * param->getg() * param->getg();
-            } else {
-                averageQs2min2 += g2mu2B * param->getQsmuRatioB()
-                                  * param->getQsmuRatioB() / a / a * hbarc
-                                  * hbarc * param->getg() * param->getg();
-            }
-
-            for (int i = 0; i < A1; i++) {
-                xm = nucleusA_.at(i).x;
-                ym = nucleusA_.at(i).y;
-                r = sqrt((x - xm) * (x - xm) + (y - ym) * (y - ym));
-
-                if (r < sqrt(0.1 * param->getSigmaNN() / M_PI)
-                    && nucleusA_.at(i).collided == 1) {
-                    check = 1;
-                }
-            }
-
-            for (int i = 0; i < A2; i++) {
-                xm = nucleusB_.at(i).x;
-                ym = nucleusB_.at(i).y;
-                r = sqrt((x - xm) * (x - xm) + (y - ym) * (y - ym));
-
-                if (r < sqrt(0.1 * param->getSigmaNN() / M_PI)
-                    && nucleusB_.at(i).collided == 1 && check == 1)
-                    check = 2;
-            }
-
-            if (check == 2) {
-                if (g2mu2B > g2mu2A) {
-                    averageQs += sqrt(
-                        g2mu2B * param->getQsmuRatioB() * param->getQsmuRatioB()
-                        / a / a * hbarc * hbarc * param->getg()
-                        * param->getg());
-                    averageQs2 += g2mu2B * param->getQsmuRatioB()
-                                  * param->getQsmuRatioB() / a / a * hbarc
-                                  * hbarc * param->getg() * param->getg();
-                    averageQs2min += g2mu2A * param->getQsmuRatio()
-                                     * param->getQsmuRatio() / a / a * hbarc
-                                     * hbarc * param->getg() * param->getg();
-                } else {
-                    averageQs += sqrt(
-                        g2mu2A * param->getQsmuRatio() * param->getQsmuRatio()
-                        / a / a * hbarc * hbarc * param->getg()
-                        * param->getg());
-                    averageQs2 += g2mu2A * param->getQsmuRatio()
-                                  * param->getQsmuRatio() / a / a * hbarc
-                                  * hbarc * param->getg() * param->getg();
-                    averageQs2min += g2mu2B * param->getQsmuRatioB()
-                                     * param->getQsmuRatioB() / a / a * hbarc
-                                     * hbarc * param->getg() * param->getg();
-                }
-                averageQs2Avg +=
-                    (g2mu2B * param->getQsmuRatioB() * param->getQsmuRatioB()
-                     + g2mu2A * param->getQsmuRatio() * param->getQsmuRatio())
-                    / 2. / a / a * hbarc * hbarc * param->getg()
-                    * param->getg();
-                count++;
-            }
-            // compute T_pp
-            Tpp += lat->cells[pos]->getTpB() * lat->cells[pos]->getTpA() * a * a
-                   / hbarc / hbarc / hbarc
-                   / hbarc;  // now this quantity is in fm^-2
-                             // remember: Tp is in GeV^2
-        }
-    }
-
-    if (count == 0) {
-        param->setAverageQs(0.);
-        param->setAverageQsAvg(0.);
-        param->setAverageQsmin(0.);
-        param->setTpp(Tpp);
-        param->setSuccess(0);
-        cout << "**** Rejected event - no overlap region (count=0)." << endl;
-        return;
-    }
-
-    averageQs /= static_cast<double>(count);
-    averageQs2 /= static_cast<double>(count);
-    averageQs2Avg /= static_cast<double>(count);
-    averageQs2min /= static_cast<double>(count);
-
-    param->setAverageQs(sqrt(averageQs2));
-    param->setAverageQsAvg(sqrt(averageQs2Avg));
-    param->setAverageQsmin(sqrt(averageQs2min));
-
-    param->setTpp(Tpp);
-
-    messager << "N_part=" << Npart;
-    messager.flush("info");
-    messager << "N_coll=" << Ncoll;
-    messager.flush("info");
-    cout << "T_pp(" << param->getb() << " fm) = " << Tpp << " 1/fm^2" << endl;
-    cout << "Q_s^2(max) S_T = "
-         << averageQs2 * a * a / hbarc / hbarc * static_cast<double>(count)
-         << endl;
-    cout << "Q_s^2(avg) S_T = "
-         << averageQs2Avg * a * a / hbarc / hbarc * static_cast<double>(count)
-         << endl;
-    cout << "Q_s^2(min) S_T = "
-         << averageQs2min * a * a / hbarc / hbarc * static_cast<double>(count)
-         << endl;
-    cout << "Q_s^2(min) S_T = " << averageQs2min2 * a * a / hbarc / hbarc
-         << endl;
-
-    cout << "Area = " << a * a * count << " fm^2" << endl;
-
-    cout << "Average Qs(max) = " << param->getAverageQs() << " GeV" << endl;
-    cout << "Average Qs(avg) = " << param->getAverageQsAvg() << " GeV" << endl;
-    cout << "Average Qs(min) = " << param->getAverageQsmin() << " GeV" << endl;
-
-    cout << "resulting Y(Qs(max)*" << param->getxFromThisFactorTimesQs()
-         << ") = "
-         << log(0.01
-                / (param->getAverageQs() * param->getxFromThisFactorTimesQs()
-                   / param->getRoots()))
-         << endl;
-    cout << "resulting Y(Qs(avg)*" << param->getxFromThisFactorTimesQs()
-         << ") = "
-         << log(0.01
-                / (param->getAverageQsAvg() * param->getxFromThisFactorTimesQs()
-                   / param->getRoots()))
-         << endl;
-    cout << "resulting Y(Qs(min)*" << param->getxFromThisFactorTimesQs()
-         << ") =  "
-         << log(0.01
-                / (param->getAverageQsmin() * param->getxFromThisFactorTimesQs()
-                   / param->getRoots()))
-         << endl;
-
     messager.info("Color charge densities for nucleus A and B set. ");
-
-    if (param->getRunningCoupling() && param->getRunWithkt() == 0) {
-        if (param->getRunWithQs() == 2) {
-            cout << "running with " << param->getRunWithThisFactorTimesQs()
-                 << " Q_s(max)" << endl;
-            alphas = 12. * M_PI
-                     / ((27.) * 2.
-                        * log(
-                            param->getRunWithThisFactorTimesQs()
-                            * param->getAverageQs() / 0.2));  // 3 flavors
-            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
-                 << " Qs_max)=" << alphas << endl;
-        } else if (param->getRunWithQs() == 0) {
-            cout << "running with " << param->getRunWithThisFactorTimesQs()
-                 << " Q_s(min)" << endl;
-            alphas = 12. * M_PI
-                     / ((27.) * 2.
-                        * log(
-                            param->getRunWithThisFactorTimesQs()
-                            * param->getAverageQsmin() / 0.2));  // 3 flavors
-            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
-                 << " Qs_min)=" << alphas << endl;
-        } else if (param->getRunWithQs() == 1) {
-            cout << "running with " << param->getRunWithThisFactorTimesQs()
-                 << " <Q_s>" << endl;
-            alphas = 12. * M_PI
-                     / ((27.) * 2.
-                        * log(
-                            param->getRunWithThisFactorTimesQs()
-                            * param->getAverageQsAvg() / 0.2));  // 3 flavors
-            cout << "alpha_s(" << param->getRunWithThisFactorTimesQs()
-                 << " <Qs>)=" << alphas << endl;
-        }
-    } else if (param->getRunningCoupling() && param->getRunWithkt() == 1) {
-        cout << "Multiplicity with running alpha_s(k_T)" << endl;
-    } else {
-        cout << "Using fixed alpha_s" << endl;
-        alphas = param->getg() * param->getg() / 4. / M_PI;
-    }
-
-    if (param->getAverageQs() > 0 && param->getAverageQsAvg() > 0
-        && averageQs2 > 0 && param->getAverageQsmin() > 0 && averageQs2Avg > 0
-        && alphas > 0 && Npart >= 2
-        && averageQs2min2 * a * a / hbarc / hbarc > param->getMinimumQs2ST()) {
-        param->setSuccess(1);
-        stringstream strup_name;
-        strup_name << "usedParameters" << param->getEventId() << ".dat";
-        string up_name;
-        up_name = strup_name.str();
-
-        ofstream fout1(up_name.c_str(), std::ios::app);
-        fout1 << " " << endl;
-        fout1 << " Output by setColorChargeDensity in Init.cpp: " << endl;
-        fout1 << " " << endl;
-        fout1 << "b = " << impact_b << " fm" << endl;
-        fout1 << "phiRP = " << phiRP << endl;
-        fout1 << "Npart = " << Npart << endl;
-        fout1 << "Ncoll = " << Ncoll << endl;
-        if (param->getRunningCoupling()) {
-            if (param->getRunWithQs() == 2)
-                fout1 << "<Q_s>(max) = " << param->getAverageQs() << endl;
-            else if (param->getRunWithQs() == 1)
-                fout1 << "<Q_s>(avg) = " << param->getAverageQsAvg() << endl;
-            else if (param->getRunWithQs() == 0)
-                fout1 << "<Q_s>(min) = " << param->getAverageQsmin() << endl;
-            fout1 << "alpha_s(" << param->getRunWithThisFactorTimesQs()
-                  << " <Q_s>) = " << param->getalphas() << endl;
-        } else
-            fout1 << "using fixed coupling alpha_s=" << param->getalphas()
-                  << endl;
-        fout1.close();
-    }
-    if (averageQs2min2 * a * a / hbarc / hbarc < param->getMinimumQs2ST())
-        cout << " **** Rejected event - Qsmin^2 S_T="
-             << averageQs2min2 * a * a / hbarc / hbarc << " too small ( < "
-             << param->getMinimumQs2ST() << ")." << endl;
-
-    param->setalphas(alphas);
-
-    stringstream strNEst_name;
-    strNEst_name << "NgluonEstimators" << param->getEventId() << ".dat";
-    string NEst_name;
-    NEst_name = strNEst_name.str();
-
-    ofstream foutNEst(NEst_name.c_str(), std::ios::out);
-
-    foutNEst << "#Q_s^2(min) S_T  " << "Q_s^2(avg) S_T  " << "Q_s^2(max) S_T "
-             << " Q_s^2(min) S_T Log^2( Q_s^2(max) / Q_s^2(min))  " << endl;
-    foutNEst << averageQs2min2 * a * a / hbarc / hbarc << "         "
-             << averageQs2Avg * a * a / hbarc / hbarc
-                    * static_cast<double>(count)
-             << "         "
-             << averageQs2 * a * a / hbarc / hbarc * static_cast<double>(count)
-             << "         "
-             << averageQs2min2 * a * a / hbarc / hbarc
-                    * pow(
-                        log(averageQs2 * static_cast<double>(count)
-                            / averageQs2min2),
-                        2.)
-             << endl;
-
-    foutNEst.close();
 }
 
 namespace {
