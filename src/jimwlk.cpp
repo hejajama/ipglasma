@@ -45,11 +45,9 @@ JIMWLK::~JIMWLK() {
     }
 
     if (initializedNoise_) {
-        for (int i = 0; i < Ncells_; i++) {
-            delete xi_[i];
-            delete xi2_[i];
-            delete CKxi_[i];
-        }
+        delete[] xi_data_;
+        delete[] xi2_data_;
+        delete[] CKxi_data_;
         delete[] xi_;
         delete[] xi2_;
         delete[] CKxi_;
@@ -71,13 +69,19 @@ void JIMWLK::initializeK() {
     }
     K_ = new std::vector<std::complex<double> > *[Ncells_];
     for (int i = 0; i < Ncells_; i++) {
-        K_[i] = new std::vector<std::complex<double> >;
+        // sized to its final length up front (always x,y) so it never
+        // has to grow/reallocate via push_back; entries default to (0,0)
+        K_[i] = new std::vector<std::complex<double> >(2);
     }
 
     double mu0 = param_.getMu0_jimwlk();
     double Lambda2 =
         param_.getLambdaQCD_jimwlk() * param_.getLambdaQCD_jimwlk();
 
+    // set once here rather than on every getMassRegulator() call below
+    gsl_set_error_handler_off();
+
+#pragma omp parallel for
     for (int pos = 0; pos < Ncells_; pos++) {
         double x = pos / Ngrid_ - static_cast<double>(Ngrid_) / 2.;
         double y = pos % Ngrid_ - static_cast<double>(Ngrid_) / 2.;
@@ -85,9 +89,7 @@ void JIMWLK::initializeK() {
         y /= Ngrid_;
         double r2 = x * x + y * y;
         if (r2 < 1e-16) {
-            K_[pos]->push_back(0.);
-            K_[pos]->push_back(0.);
-            continue;
+            continue;  // K_[pos] is already (0, 0)
         }
         double mass_regulator = getMassRegulator(x, y);
         double alphas_sqroot = sqrt(getAlphas(x, y));
@@ -100,11 +102,9 @@ void JIMWLK::initializeK() {
         double sin_y = sin(M_PI * y) / M_PI;
         double denom = sin_x * sin_x + sin_y * sin_y;
         double factor = alphas_sqroot * mass_regulator / Ngrid_ / denom;
-        tmpk1 *= factor;
-        tmpk2 *= factor;
 
-        K_[pos]->push_back(tmpk1);
-        K_[pos]->push_back(tmpk2);
+        (*K_[pos])[0] = tmpk1 * factor;
+        (*K_[pos])[1] = tmpk2 * factor;
     }
     fft_ptr_->fftnVector(K_, K_, nn_, 1);
     initializedK_ = true;
@@ -132,8 +132,9 @@ double JIMWLK::getMassRegulator(const double x, const double y) const {
     double bessel_argument = lat_m * lat_r;
     // double bes = std::cyl_bessel_k(1, bessel_argument);
     // use gsl bessel function to be compatible with the AppleClang compiler
+    // (assumes the GSL error handler was already disabled by the caller,
+    // since this runs once per cell from initializeK())
     gsl_sf_result bes;
-    gsl_set_error_handler_off();  // so that when we have too large
     int status = gsl_sf_bessel_K1_e(bessel_argument, &bes);
     if (status != GSL_SUCCESS) {
         mass_regulator = 0.0;
@@ -172,13 +173,19 @@ void JIMWLK::initializeNoise() {
     if (initializedNoise_) {
         return;
     }
+    // one contiguous allocation per array instead of Ncells_ separate
+    // ones, so consecutive cells are adjacent in memory
+    xi_data_ = new std::complex<double>[Ncells_ * 2 * Nc2m1_];
+    xi2_data_ = new std::complex<double>[Ncells_ * 2 * Nc2m1_];
+    CKxi_data_ = new std::complex<double>[Ncells_ * Nc2m1_];
+
     xi_ = new std::complex<double> *[Ncells_];
     xi2_ = new std::complex<double> *[Ncells_];
     CKxi_ = new std::complex<double> *[Ncells_];
     for (int i = 0; i < Ncells_; i++) {
-        xi_[i] = new std::complex<double>[2 * Nc2m1_];
-        xi2_[i] = new std::complex<double>[2 * Nc2m1_];
-        CKxi_[i] = new std::complex<double>[Nc2m1_];
+        xi_[i] = xi_data_ + i * 2 * Nc2m1_;
+        xi2_[i] = xi2_data_ + i * 2 * Nc2m1_;
+        CKxi_[i] = CKxi_data_ + i * Nc2m1_;
     }
     initializedNoise_ = true;
 }
@@ -224,7 +231,7 @@ void JIMWLK::evolution() {
             std::cout << "Step " << ids << std::endl;
         }
         double xLoc = x0 * exp(-ids * dlogx);
-        evolutionStep();
+        evolutionStep(true);
         if (saveSnapshots) {
             if (iSnapshot < xSnapshotList.size()) {
                 if (xLoc > xSnapshotList[iSnapshot]
@@ -247,7 +254,7 @@ void JIMWLK::evolution() {
             std::cout << "Step " << ids << std::endl;
         }
         double xLoc = x0 * exp(-ids * dlogx);
-        evolutionStep2();
+        evolutionStep(false);
         if (saveSnapshots) {
             if (iSnapshot < xSnapshotList.size()) {
                 if (xLoc > xSnapshotList[iSnapshot]
@@ -263,12 +270,19 @@ void JIMWLK::evolution() {
     std::cout << "Done." << std::endl;
 }
 
-void JIMWLK::evolutionStep() {
+void JIMWLK::evolutionStep(bool evolveProjectile) {
+    Matrix &(Cell::*getWL)() const = evolveProjectile ? &Cell::getU : &Cell::getU2;
+    void (Cell::*setWL)(const Matrix &) =
+        evolveProjectile ? &Cell::setU : &Cell::setU2;
+
     const complex<double> I(0., 1.);
     const double ds_sqrt = std::sqrt(param_.getDs_jimwlk());
+    const complex<double> negI_dssqrt = -I * ds_sqrt;
+    const complex<double> posI_dssqrt = I * ds_sqrt;
 
     // generate random Gaussian noise in every cell for Nc^2-1 color
     // components and 2 spatial components x and y
+    // (kept serial: random_ptr_->Gauss() mutates shared RNG state)
     for (int i = 0; i < Ncells_; i++) {
         for (int n = 0; n < 2 * Nc2m1_; n++) {
             xi2_[i][n] = std::complex<double>(random_ptr_->Gauss(), 0.);
@@ -281,10 +295,11 @@ void JIMWLK::evolutionStep() {
 
     // now compute C(K_i,xi_i^a) = F^{-1}(F(K_i)F(xi_i^a))
     //                           = F^{-1}(F(K_x)F(xi_x^a)+F(K_y)F(xi_y^a))
+#pragma omp parallel for
     for (int i = 0; i < Ncells_; i++) {
         for (int n = 0; n < Nc2m1_; n++) {
-            CKxi_[i][n] = (*K_[i]).at(0) * xi_[i][n]
-                          + (*K_[i]).at(1) * xi_[i][n + Nc2m1_];
+            CKxi_[i][n] = (*K_[i])[0] * xi_[i][n]
+                          + (*K_[i])[1] * xi_[i][n + Nc2m1_];
             // product of x components + product of y components
         }
     }
@@ -292,18 +307,18 @@ void JIMWLK::evolutionStep() {
     // now CKxi contains C(K_i,xi_i^a) - it is a vector with a components
     fft_ptr_->fftnArray(CKxi_, CKxi_, nn_, -1, Nc2m1_);
 
+#pragma omp parallel for
     for (int i = 0; i < Ncells_; i++) {
         *VxsiVx_[i] = zero_;
         *VxsiVy_[i] = zero_;
+        const Matrix &U = (lat_ptr_->cells[i]->*getWL)();
         for (int a = 0; a < Nc2m1_; a++) {
-            Matrix Uconj = lat_ptr_->cells[i]->getU();
-            Uconj.conjg();
-            *VxsiVx_[i] = (*VxsiVx_[i])
-                          + xi2_[i][a] * lat_ptr_->cells[i]->getU()
-                                * group_ptr_->getT(a) * Uconj;
-            *VxsiVy_[i] = (*VxsiVy_[i])
-                          + xi2_[i][a + Nc2m1_] * lat_ptr_->cells[i]->getU()
-                                * group_ptr_->getT(a) * Uconj;
+            Matrix UTa = U * group_ptr_->getT(a);
+            // UTa * U^dagger, folding in the conjugate transpose of U
+            // instead of building it explicitly (Nc=3 specialization)
+            Matrix UTUconj = UTa.prodABconj(UTa, U);
+            *VxsiVx_[i] += xi2_[i][a] * UTUconj;
+            *VxsiVy_[i] += xi2_[i][a + Nc2m1_] * UTUconj;
         }
     }
 
@@ -311,6 +326,7 @@ void JIMWLK::evolutionStep() {
     fft_ptr_->fftn(VxsiVx_, VxsiVx_, nn_, 1);
     fft_ptr_->fftn(VxsiVy_, VxsiVy_, nn_, 1);
 
+#pragma omp parallel for
     for (int i = 0; i < Ncells_; i++) {
         *VxsiVx_[i] = (*K_[i])[0] * (*VxsiVx_[i]) + (*K_[i])[1] * (*VxsiVy_[i]);
     }
@@ -319,86 +335,20 @@ void JIMWLK::evolutionStep() {
     fft_ptr_->fftn(VxsiVx_, VxsiVx_, nn_, -1);
 
     // Evolve Matrix
+#pragma omp parallel for
     for (int i = 0; i < Ncells_; i++) {
-        Matrix left(Nc_, 0.);
-        left = -I * ds_sqrt * (*VxsiVx_[i]);
+        Matrix left = negI_dssqrt * (*VxsiVx_[i]);
         Matrix right(Nc_, 0.);
 
         for (int a = 0; a < Nc2m1_; a++) {
-            right = right + real(CKxi_[i][a]) * group_ptr_->getT(a);
+            const Matrix &Ta = group_ptr_->getT(a);
+            const double c = real(CKxi_[i][a]);
+            for (int idx = 0; idx < Ta.getNN(); idx++) {
+                right.set(idx, right(idx) + c * Ta(idx));
+            }
         }
-        right = I * ds_sqrt * right;
-        lat_ptr_->cells[i]->setU(
-            left.expm() * lat_ptr_->cells[i]->getU() * right.expm());
-    }
-}
-
-void JIMWLK::evolutionStep2() {
-    const complex<double> I(0., 1.);
-    const double ds_sqrt = std::sqrt(param_.getDs_jimwlk());
-
-    // generate random Gaussian noise in every cell for Nc^2-1 color
-    // components and 2 spatial components x and y
-    for (int i = 0; i < Ncells_; i++) {
-        for (int n = 0; n < 2 * Nc2m1_; n++) {
-            xi2_[i][n] = std::complex<double>(random_ptr_->Gauss(), 0.);
-        }
-    }
-
-    // the local xi now contains the Fourier transform of xi,
-    // while the original xi is stored in the array xi2
-    fft_ptr_->fftnArray(xi2_, xi_, nn_, 1, 2 * Nc2m1_);
-
-    // now compute C(K_i,xi_i^a) = F^{-1}(F(K_i)F(xi_i^a))
-    //                           = F^{-1}(F(K_x)F(xi_x^a)+F(K_y)F(xi_y^a))
-    for (int i = 0; i < Ncells_; i++) {
-        for (int n = 0; n < Nc2m1_; n++) {
-            CKxi_[i][n] = (*K_[i]).at(0) * xi_[i][n]
-                          + (*K_[i]).at(1) * xi_[i][n + Nc2m1_];
-            // product of x components + product of y components
-        }
-    }
-
-    // now CKxi contains C(K_i,xi_i^a) - it is a vector with a components
-    fft_ptr_->fftnArray(CKxi_, CKxi_, nn_, -1, Nc2m1_);
-
-    for (int i = 0; i < Ncells_; i++) {
-        *VxsiVx_[i] = zero_;
-        *VxsiVy_[i] = zero_;
-        for (int a = 0; a < Nc2m1_; a++) {
-            Matrix Uconj = lat_ptr_->cells[i]->getU2();
-            Uconj.conjg();
-            *VxsiVx_[i] = (*VxsiVx_[i])
-                          + xi2_[i][a] * lat_ptr_->cells[i]->getU2()
-                                * group_ptr_->getT(a) * Uconj;
-            *VxsiVy_[i] = (*VxsiVy_[i])
-                          + xi2_[i][a + Nc2m1_] * lat_ptr_->cells[i]->getU2()
-                                * group_ptr_->getT(a) * Uconj;
-        }
-    }
-
-    // FFT V xi V
-    fft_ptr_->fftn(VxsiVx_, VxsiVx_, nn_, 1);
-    fft_ptr_->fftn(VxsiVy_, VxsiVy_, nn_, 1);
-
-    for (int i = 0; i < Ncells_; i++) {
-        *VxsiVx_[i] = (*K_[i])[0] * (*VxsiVx_[i]) + (*K_[i])[1] * (*VxsiVy_[i]);
-    }
-
-    // FFT back
-    fft_ptr_->fftn(VxsiVx_, VxsiVx_, nn_, -1);
-
-    // Evolve Matrix
-    for (int i = 0; i < Ncells_; i++) {
-        Matrix left(Nc_, 0.);
-        left = -I * ds_sqrt * (*VxsiVx_[i]);
-        Matrix right(Nc_, 0.);
-
-        for (int a = 0; a < Nc2m1_; a++) {
-            right = right + real(CKxi_[i][a]) * group_ptr_->getT(a);
-        }
-        right = I * ds_sqrt * right;
-        lat_ptr_->cells[i]->setU2(
-            left.expm() * lat_ptr_->cells[i]->getU2() * right.expm());
+        right *= posI_dssqrt;
+        Cell *cell = lat_ptr_->cells[i];
+        (cell->*setWL)(left.expm() * (cell->*getWL)() * right.expm());
     }
 }
