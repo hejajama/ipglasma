@@ -11,6 +11,8 @@
 #include "Parameters.h"
 #include "Random.h"
 
+enum class NucleusRole { Projectile, Target };
+
 class JIMWLK {
   private:
     Parameters &param_;
@@ -59,7 +61,7 @@ class JIMWLK {
     void initializeNoise();
 
     void evolution();
-    void evolutionStep(bool evolveProjectile);
+    void evolutionStep(NucleusRole nucleus);
 };
 
 #endif  // SRC_JIMWLK_H_

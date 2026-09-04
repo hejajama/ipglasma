@@ -231,7 +231,7 @@ void JIMWLK::evolution() {
             std::cout << "Step " << ids << std::endl;
         }
         double xLoc = x0 * exp(-ids * dlogx);
-        evolutionStep(true);
+        evolutionStep(NucleusRole::Projectile);
         if (saveSnapshots) {
             if (iSnapshot < xSnapshotList.size()) {
                 if (xLoc > xSnapshotList[iSnapshot]
@@ -254,7 +254,7 @@ void JIMWLK::evolution() {
             std::cout << "Step " << ids << std::endl;
         }
         double xLoc = x0 * exp(-ids * dlogx);
-        evolutionStep(false);
+        evolutionStep(NucleusRole::Target);
         if (saveSnapshots) {
             if (iSnapshot < xSnapshotList.size()) {
                 if (xLoc > xSnapshotList[iSnapshot]
@@ -270,7 +270,8 @@ void JIMWLK::evolution() {
     std::cout << "Done." << std::endl;
 }
 
-void JIMWLK::evolutionStep(bool evolveProjectile) {
+void JIMWLK::evolutionStep(NucleusRole nucleus) {
+    const bool evolveProjectile = (nucleus == NucleusRole::Projectile);
     Matrix &(Cell::*getWL)() const = evolveProjectile ? &Cell::getU : &Cell::getU2;
     void (Cell::*setWL)(const Matrix &) =
         evolveProjectile ? &Cell::setU : &Cell::setU2;
