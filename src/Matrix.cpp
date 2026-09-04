@@ -21,8 +21,8 @@ namespace {
 
 inline void requireSU3Dimension(int n) {
     if (n != 3) {
-        std::cerr << "Error: fixed Matrix is SU(3)-only; requested " << n
-                  << "x" << n << " matrix. Exiting." << std::endl;
+        std::cerr << "Error: fixed Matrix is SU(3)-only; requested " << n << "x"
+                  << n << " matrix. Exiting." << std::endl;
         std::exit(1);
     }
 }
@@ -46,9 +46,7 @@ Matrix::Matrix(int n, double a) {
     e[8] = complex<double>(a, 0.0);
 }
 
-Matrix::Matrix(int n, NoInitTag) {
-    requireSU3Dimension(n);
-}
+Matrix::Matrix(int n, NoInitTag) { requireSU3Dimension(n); }
 
 // MaxTr version of reunitarization
 void Matrix::reu2() {
@@ -371,22 +369,16 @@ void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
 
     ua[0] = Q[3] * Q[5] + Q[4] * Q[6] + 2. / sqrt3 * Q[0] * Q[7];
     ua[1] = 2. * Q[1] * Q[7] / sqrt3 - Q[3] * Q[6] + Q[4] * Q[5];
-    ua[2] =
-        2. * Q[2] * Q[7] / sqrt3 + 0.5 * Q[3] * Q[3] + 0.5 * Q[4] * Q[4]
-        - 0.5 * Q[5] * Q[5] - 0.5 * Q[6] * Q[6];
-    ua[3] =
-        -1. / sqrt3 * Q[3] * Q[7] + Q[0] * Q[5] - Q[1] * Q[6] + Q[2] * Q[3];
-    ua[4] =
-        -1. / sqrt3 * Q[4] * Q[7] + Q[0] * Q[6] + Q[1] * Q[5] + Q[2] * Q[4];
-    ua[5] =
-        -1. / sqrt3 * Q[5] * Q[7] + Q[0] * Q[3] + Q[1] * Q[4] - Q[2] * Q[5];
-    ua[6] =
-        -1. / sqrt3 * Q[6] * Q[7] + Q[0] * Q[4] - Q[1] * Q[3] - Q[2] * Q[6];
-    ua[7] =
-        (Q[0] * Q[0] + Q[1] * Q[1] + Q[2] * Q[2] - Q[7] * Q[7]
-         - 0.5 * Q[3] * Q[3] - 0.5 * Q[4] * Q[4] - 0.5 * Q[5] * Q[5]
-         - 0.5 * Q[6] * Q[6])
-        / sqrt3;
+    ua[2] = 2. * Q[2] * Q[7] / sqrt3 + 0.5 * Q[3] * Q[3] + 0.5 * Q[4] * Q[4]
+            - 0.5 * Q[5] * Q[5] - 0.5 * Q[6] * Q[6];
+    ua[3] = -1. / sqrt3 * Q[3] * Q[7] + Q[0] * Q[5] - Q[1] * Q[6] + Q[2] * Q[3];
+    ua[4] = -1. / sqrt3 * Q[4] * Q[7] + Q[0] * Q[6] + Q[1] * Q[5] + Q[2] * Q[4];
+    ua[5] = -1. / sqrt3 * Q[5] * Q[7] + Q[0] * Q[3] + Q[1] * Q[4] - Q[2] * Q[5];
+    ua[6] = -1. / sqrt3 * Q[6] * Q[7] + Q[0] * Q[4] - Q[1] * Q[3] - Q[2] * Q[6];
+    ua[7] = (Q[0] * Q[0] + Q[1] * Q[1] + Q[2] * Q[2] - Q[7] * Q[7]
+             - 0.5 * Q[3] * Q[3] - 0.5 * Q[4] * Q[4] - 0.5 * Q[5] * Q[5]
+             - 0.5 * Q[6] * Q[6])
+            / sqrt3;
 
     result[0] = u0;
     for (int i = 0; i < 8; i++) {
@@ -402,7 +394,6 @@ void Matrix::expmCoeff(const double *Q, complex<double> result[9]) const {
             result[i] = 0;
         }
     }
-
 }
 
 vector<complex<double>> Matrix::expmCoeff(std::vector<double> &Q, int Nc) {
@@ -540,23 +531,20 @@ complex<double> Matrix::det() {
 complex<double> Matrix::trace() const { return e[0] + e[4] + e[8]; }
 
 complex<double> Matrix::traceOfProdcutOfMatrix(Matrix &M1, Matrix &M2) const {
-    return M1(0) * M2(0) + M1(1) * M2(3) + M1(2) * M2(6)
-           + M1(3) * M2(1) + M1(4) * M2(4) + M1(5) * M2(7)
-           + M1(6) * M2(2) + M1(7) * M2(5) + M1(8) * M2(8);
+    return M1(0) * M2(0) + M1(1) * M2(3) + M1(2) * M2(6) + M1(3) * M2(1)
+           + M1(4) * M2(4) + M1(5) * M2(7) + M1(6) * M2(2) + M1(7) * M2(5)
+           + M1(8) * M2(8);
 }
 
 std::string Matrix::MatrixToString() {
     std::stringstream output;
     output.precision(15);
-    output << e[0].real() << " " << e[0].imag() << " "
-           << e[3].real() << " " << e[3].imag() << " "
-           << e[6].real() << " " << e[6].imag() << " "
-           << e[1].real() << " " << e[1].imag() << " "
-           << e[4].real() << " " << e[4].imag() << " "
-           << e[7].real() << " " << e[7].imag() << " "
-           << e[2].real() << " " << e[2].imag() << " "
-           << e[5].real() << " " << e[5].imag() << " "
-           << e[8].real() << " " << e[8].imag();
+    output << e[0].real() << " " << e[0].imag() << " " << e[3].real() << " "
+           << e[3].imag() << " " << e[6].real() << " " << e[6].imag() << " "
+           << e[1].real() << " " << e[1].imag() << " " << e[4].real() << " "
+           << e[4].imag() << " " << e[7].real() << " " << e[7].imag() << " "
+           << e[2].real() << " " << e[2].imag() << " " << e[5].real() << " "
+           << e[5].imag() << " " << e[8].real() << " " << e[8].imag();
     return output.str();
 }
 

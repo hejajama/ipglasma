@@ -41,8 +41,7 @@ inline double projectGaugeDivergenceSU3(
     const complex<double> d11 = x[4] - xm[4] + y[4] - ym[4];
     const complex<double> d22 = x[8] - xm[8] + y[8] - ym[8];
 
-    const double traceShift =
-        (d00.imag() + d11.imag() + d22.imag()) / 6.0;
+    const double traceShift = (d00.imag() + d11.imag() + d22.imag()) / 6.0;
     const double g00 = 0.5 * d00.imag() - traceShift;
     const double g11 = 0.5 * d11.imag() - traceShift;
     const double g22 = 0.5 * d22.imag() - traceShift;
@@ -59,14 +58,11 @@ inline double projectGaugeDivergenceSU3(
     const complex<double> d21 = x[7] - xm[7] + y[7] - ym[7];
 
     const complex<double> g01(
-        0.25 * (d01.imag() + d10.imag()),
-        0.25 * (d10.real() - d01.real()));
+        0.25 * (d01.imag() + d10.imag()), 0.25 * (d10.real() - d01.real()));
     const complex<double> g02(
-        0.25 * (d02.imag() + d20.imag()),
-        0.25 * (d20.real() - d02.real()));
+        0.25 * (d02.imag() + d20.imag()), 0.25 * (d20.real() - d02.real()));
     const complex<double> g12(
-        0.25 * (d12.imag() + d21.imag()),
-        0.25 * (d21.real() - d12.real()));
+        0.25 * (d12.imag() + d21.imag()), 0.25 * (d21.real() - d12.real()));
 
     out[1] = g01;
     out[3] = std::conj(g01);
@@ -147,7 +143,8 @@ void GaugeFix::FFTChi(
     for (int gfiter = 0; gfiter < max_gfiter; gfiter++) {
         gresidual = 0.;
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.divergence");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.divergence");
 #pragma omp parallel
             {
 #pragma omp for collapse(2)
@@ -155,7 +152,8 @@ void GaugeFix::FFTChi(
                     for (int j = 0; j < N; j++) {
                         const int localpos = i * N + j;
 
-                        // use periodic boundary conditions to have fast convergence
+                        // use periodic boundary conditions to have fast
+                        // convergence
                         const int localposmX =
                             (i == 0) ? (N - 1) * N + j : (i - 1) * N + j;
                         const int localposmY =
@@ -195,62 +193,71 @@ void GaugeFix::FFTChi(
         }
 
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.fft_forward");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.fft_forward");
             fft->fftn(chi, chi, nn, 1);
         }
 
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.poisson");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.poisson");
 #pragma omp parallel for
             for (int i = 0; i < N; i++) {
-            for (int j = 0; j < N; j++) {
-                double kx, ky, kt2;
-                int localpos = i * N + j;
-                kx = sin(
-                    M_PI
-                    * (-0.5 + static_cast<double>(i) / static_cast<double>(N)));
-                ky = sin(
-                    M_PI
-                    * (-0.5 + static_cast<double>(j) / static_cast<double>(N)));
-                kt2 = 4. * (kx * kx + ky * ky);  // lattice momentum squared
-                *chi[localpos] = -1.5 * (1. / (kt2 + 1e-9)) * (*chi[localpos]);
+                for (int j = 0; j < N; j++) {
+                    double kx, ky, kt2;
+                    int localpos = i * N + j;
+                    kx = sin(
+                        M_PI
+                        * (-0.5
+                           + static_cast<double>(i) / static_cast<double>(N)));
+                    ky = sin(
+                        M_PI
+                        * (-0.5
+                           + static_cast<double>(j) / static_cast<double>(N)));
+                    kt2 = 4. * (kx * kx + ky * ky);  // lattice momentum squared
+                    *chi[localpos] =
+                        -1.5 * (1. / (kt2 + 1e-9)) * (*chi[localpos]);
                 }
             }
         }
 
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.fft_backward");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.fft_backward");
             fft->fftn(chi, chi, nn, -1);
         }
 
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.exponentiate");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.exponentiate");
 #pragma omp parallel
             {
                 Matrix localg(Nc);
 #pragma omp for
                 for (int i = 0; i < N; i++) {
-                for (int j = 0; j < N; j++) {
-                    int localpos = i * N + j;
-                    // chi is Hermitian and traceless here, so evaluate
-                    // exp(i chi) directly in SU(3).  This avoids the generic
-                    // Pade exponential and the subsequent reunitarization.
-                    expGaugeRotationSU3(*chi[localpos], localg);
+                    for (int j = 0; j < N; j++) {
+                        int localpos = i * N + j;
+                        // chi is Hermitian and traceless here, so evaluate
+                        // exp(i chi) directly in SU(3).  This avoids the
+                        // generic Pade exponential and the subsequent
+                        // reunitarization.
+                        expGaugeRotationSU3(*chi[localpos], localg);
 
-                    if (localg(2) != localg(2)) {
-                        cout << "problem at " << i << " " << j
-                             << " with g=" << localg << endl;
-                        localg = one;
-                    }
+                        if (localg(2) != localg(2)) {
+                            cout << "problem at " << i << " " << j
+                                 << " with g=" << localg << endl;
+                            localg = one;
+                        }
 
-                    lat->Ux1[localpos] = (localg);
+                        lat->Ux1[localpos] = (localg);
                     }
                 }
             }
         }
 
         {
-            IPG_PROFILE_SCOPE("observables.gluon_multiplicity.gauge_fix.transform");
+            IPG_PROFILE_SCOPE(
+                "observables.gluon_multiplicity.gauge_fix.transform");
 
             // Apply the complete gauge transformation directly to each field
             // element.  Ux1 stores the already-computed g(x) and is read-only
@@ -285,31 +292,23 @@ void GaugeFix::FFTChi(
                         // wrap the neighbor was visited first, so preserve the
                         // right-then-left order for those boundary links.
                         if (i == N - 1) {
-                            lat->Ux[localpos] =
-                                g * (lat->Ux[localpos] * gdagX);
+                            lat->Ux[localpos] = g * (lat->Ux[localpos] * gdagX);
                         } else {
-                            lat->Ux[localpos] =
-                                (g * lat->Ux[localpos]) * gdagX;
+                            lat->Ux[localpos] = (g * lat->Ux[localpos]) * gdagX;
                         }
                         if (j == N - 1) {
-                            lat->Uy[localpos] =
-                                g * (lat->Uy[localpos] * gdagY);
+                            lat->Uy[localpos] = g * (lat->Uy[localpos] * gdagY);
                         } else {
-                            lat->Uy[localpos] =
-                                (g * lat->Uy[localpos]) * gdagY;
+                            lat->Uy[localpos] = (g * lat->Uy[localpos]) * gdagY;
                         }
 
                         // Site-local adjoint fields are independent once g(x)
                         // is known and retain the original left-to-right matrix
                         // multiplication order.
-                        lat->U[localpos] =
-                            (g * lat->U[localpos]) * gdag;
-                        lat->U2[localpos] =
-                            (g * lat->U2[localpos]) * gdag;
-                        lat->Uy2[localpos] =
-                            (g * lat->Uy2[localpos]) * gdag;
-                        lat->Ux2[localpos] =
-                            (g * lat->Ux2[localpos]) * gdag;
+                        lat->U[localpos] = (g * lat->U[localpos]) * gdag;
+                        lat->U2[localpos] = (g * lat->U2[localpos]) * gdag;
+                        lat->Uy2[localpos] = (g * lat->Uy2[localpos]) * gdag;
+                        lat->Ux2[localpos] = (g * lat->Ux2[localpos]) * gdag;
                     }
                 }
             }

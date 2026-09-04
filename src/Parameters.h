@@ -88,9 +88,9 @@ class Parameters {
     int writeOutputs;  // decide whether to write (1) or not write (0) large
                        // output files (like hydro input data)
     int writeEpsilonUHydro;  // run the flow-velocity/hydro-output calculation
-                              // (1) or write only Tmunu at measurement times (0)
-    int writeTmunuBinary;  // write Tmunu as compact binary .ipgt (1) or
-                           // formatted text .dat (0)
+                             // (1) or write only Tmunu at measurement times (0)
+    int writeTmunuBinary;    // write Tmunu as compact binary .ipgt (1) or
+                             // formatted text .dat (0)
     int writeOutputsToHDF5;  // decide whether to write (1) or not write (0)
                              // output files to one hdf5 file
     int writeEvolution;    // decide whether to write (1) or not write (0) time

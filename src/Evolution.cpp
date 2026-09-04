@@ -9,12 +9,12 @@
 #include <algorithm>
 #include <complex>
 #include <cstdint>
-#include <iomanip>
-#include <stdexcept>
-#include <vector>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
+#include <vector>
 
 #include "Fragmentation.h"
 #include "GaugeFix.h"
@@ -113,8 +113,8 @@ struct EvolveEScratch {
 
 inline void addEForceSU3(
     Matrix &En, const Matrix &a, const Matrix &b, double bSign,
-    const Matrix &phiN, const Matrix &phi,
-    const complex<double> coeffPlaq, const complex<double> coeffComm) {
+    const Matrix &phiN, const Matrix &phi, const complex<double> coeffPlaq,
+    const complex<double> coeffComm) {
     complex<double> *E = En.data();
     const complex<double> *A = a.data();
     const complex<double> *B = b.data();
@@ -158,8 +158,8 @@ void evolveUTeam(
 
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
-        scratch.E1 = complex<double>(0., g * g * dtau / (tau + dtau / 2.))
-                     * lat->U[pos];
+        scratch.E1 =
+            complex<double>(0., g * g * dtau / (tau + dtau / 2.)) * lat->U[pos];
 
         scratch.temp2 = scratch.one + 1. / (double)n * scratch.E1;
         for (int in = 0; in < n - 1; in++) {
@@ -188,8 +188,7 @@ void evolveUTeam(
 }
 
 void evolvePhiTeam(
-    Lattice *lat, int N, double dtau, double tau,
-    EvolvePhiScratch &scratch) {
+    Lattice *lat, int N, double dtau, double tau, EvolvePhiScratch &scratch) {
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
         scratch.phi = lat->Uy2[pos];
@@ -202,8 +201,7 @@ void evolvePhiTeam(
 }
 
 void evolvePiTeam(
-    Lattice *lat, int N, double dtau, double tau,
-    EvolvePiScratch &scratch) {
+    Lattice *lat, int N, double dtau, double tau, EvolvePiScratch &scratch) {
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
         scratch.Ux = lat->Ux[pos];
@@ -213,23 +211,19 @@ void evolvePiTeam(
 
         scratch.phiX =
             scratch.Ux
-            * scratch.Ux.prodABconj(
-                lat->Uy2[lat->pospX[pos]], scratch.Ux);
+            * scratch.Ux.prodABconj(lat->Uy2[lat->pospX[pos]], scratch.Ux);
         scratch.phiY =
             scratch.Uy
-            * scratch.Uy.prodABconj(
-                lat->Uy2[lat->pospY[pos]], scratch.Uy);
+            * scratch.Uy.prodABconj(lat->Uy2[lat->pospY[pos]], scratch.Uy);
 
         scratch.UxXm1 = lat->Ux[lat->posmX[pos]];
         scratch.UyYm1 = lat->Uy[lat->posmY[pos]];
 
         scratch.phimX =
-            scratch.Ux.prodAconjB(
-                scratch.UxXm1, lat->Uy2[lat->posmX[pos]])
+            scratch.Ux.prodAconjB(scratch.UxXm1, lat->Uy2[lat->posmX[pos]])
             * scratch.UxXm1;
         scratch.phimY =
-            scratch.Ux.prodAconjB(
-                scratch.UyYm1, lat->Uy2[lat->posmY[pos]])
+            scratch.Ux.prodAconjB(scratch.UyYm1, lat->Uy2[lat->posmY[pos]])
             * scratch.UyYm1;
 
         scratch.bracket = scratch.phiX + scratch.phimX + scratch.phiY
@@ -247,8 +241,7 @@ void evolveETeam(
     (void)Nc;
     const complex<double> coeffPlaq =
         complex<double>(0., 1.) * tau * dtau / (2. * g * g);
-    const complex<double> coeffComm =
-        complex<double>(0., 1.) * dtau / tau;
+    const complex<double> coeffComm = complex<double>(0., 1.) * dtau / tau;
 
 #pragma omp for
     for (int pos = 0; pos < N * N; pos++) {
@@ -260,48 +253,43 @@ void evolveETeam(
         scratch.phiN = lat->Uy2[lat->pospX[pos]];
         scratch.Ux = lat->Ux[pos];
         scratch.phiN =
-            scratch.Ux
-            * scratch.Ux.prodABconj(scratch.phiN, scratch.Ux);
+            scratch.Ux * scratch.Ux.prodABconj(scratch.phiN, scratch.Ux);
 
         scratch.Uy = lat->Uy[pos];
         scratch.temp1 = lat->Ux[lat->pospY[pos]];
         scratch.temp1.conjg();
-        scratch.U12 =
-            (scratch.Ux * lat->Uy[lat->pospX[pos]])
-            * (scratch.Ux.prodABconj(scratch.temp1, scratch.Uy));
+        scratch.U12 = (scratch.Ux * lat->Uy[lat->pospX[pos]])
+                      * (scratch.Ux.prodABconj(scratch.temp1, scratch.Uy));
 
         scratch.temp1 = lat->Ux[lat->posmY[pos]];
         scratch.temp2 = lat->Uy[pospXmY];
         scratch.U1m2 =
             (scratch.Ux.prodABconj(scratch.Ux, scratch.temp2))
-            * (scratch.Ux.prodAconjB(
-                scratch.temp1, lat->Uy[lat->posmY[pos]]));
+            * (scratch.Ux.prodAconjB(scratch.temp1, lat->Uy[lat->posmY[pos]]));
 
         scratch.temp1 = lat->Uy[lat->posmX[pos]];
         scratch.temp2 = lat->Ux[posmXpY];
         scratch.U2m1 =
             (scratch.Ux.prodABconj(scratch.Uy, scratch.temp2))
-            * (scratch.Ux.prodAconjB(
-                scratch.temp1, lat->Ux[lat->posmX[pos]]));
+            * (scratch.Ux.prodAconjB(scratch.temp1, lat->Ux[lat->posmX[pos]]));
 
         // U12 + U1m2 - U12^dagger - U1m2^dagger is the
         // anti-Hermitian part of U12 + U1m2.
         addEForceSU3(
-            scratch.En, scratch.U12, scratch.U1m2, 1.0,
-            scratch.phiN, scratch.phi, coeffPlaq, coeffComm);
+            scratch.En, scratch.U12, scratch.U1m2, 1.0, scratch.phiN,
+            scratch.phi, coeffPlaq, coeffComm);
         lat->U[pos] = scratch.En;
 
         scratch.phiN = lat->Uy2[lat->pospY[pos]];
         scratch.phiN =
-            scratch.Uy
-            * scratch.Uy.prodABconj(scratch.phiN, scratch.Uy);
+            scratch.Uy * scratch.Uy.prodABconj(scratch.phiN, scratch.Uy);
 
         scratch.En = lat->U2[pos];
         // U12^dagger + U2m1 - U12 - U2m1^dagger is the
         // anti-Hermitian part of U2m1 - U12.
         addEForceSU3(
-            scratch.En, scratch.U2m1, scratch.U12, -1.0,
-            scratch.phiN, scratch.phi, coeffPlaq, coeffComm);
+            scratch.En, scratch.U2m1, scratch.U12, -1.0, scratch.phiN,
+            scratch.phi, coeffPlaq, coeffComm);
         lat->U2[pos] = scratch.En;
     }
 }
@@ -333,7 +321,9 @@ void evolveStepPersistent(
         EvolveEScratch eScratch(Nc);
 
 #pragma omp single
-        { phaseStart = ipg::wallSeconds(); }
+        {
+            phaseStart = ipg::wallSeconds();
+        }
         evolvePiTeam(lat, N, dtau, tau, piScratch);
 #pragma omp single
         {
@@ -358,7 +348,9 @@ void evolveStepPersistent(
 
             evolveUTeam(lat, N, g, dtau, tau, uScratch);
 #pragma omp single
-            { addTeamPhase("evolution.evolveU", phaseStart); }
+            {
+                addTeamPhase("evolution.evolveU", phaseStart);
+            }
         }
     }
 }
@@ -498,212 +490,207 @@ void Evolution::checkGaussLaw(Lattice *lat, Parameters *param) {
     cout << "Gauss violation=" << largest << endl;
 }
 
+void Evolution::writeEvolvedFields(Lattice *lat, Parameters *param, int it) {
+    IPG_PROFILE_SCOPE("output.evolved_fields");
+    const int N = param->getSize();
+    const int Nc = param->getNc();
+    const double a = param->getL() / static_cast<double>(N);
+    const double dtau = param->getdtau();
+    const double tauLattice = static_cast<double>(it) * dtau;
+    const double tauFm = a * tauLattice;
+    const double momentumTauFm =
+        (it == 0) ? 0.0 : a * (static_cast<double>(it) - 0.5) * dtau;
 
-void Evolution::writeEvolvedFields(
-    Lattice *lat, Parameters *param, int it) {
-  IPG_PROFILE_SCOPE("output.evolved_fields");
-  const int N = param->getSize();
-  const int Nc = param->getNc();
-  const double a = param->getL() / static_cast<double>(N);
-  const double dtau = param->getdtau();
-  const double tauLattice = static_cast<double>(it) * dtau;
-  const double tauFm = a * tauLattice;
-  const double momentumTauFm =
-      (it == 0) ? 0.0 : a * (static_cast<double>(it) - 0.5) * dtau;
+    // The payload layout is [field, real_or_imag, x, y, row, col], C-order.
+    // Full matrices are stored so that no color information is discarded.
+    constexpr int nFields = 6;
+    const std::size_t matrixElements =
+        static_cast<std::size_t>(N) * N * Nc * Nc;
+    const std::size_t payloadElements =
+        static_cast<std::size_t>(nFields) * 2 * matrixElements;
+    std::vector<float> payload(payloadElements);
 
-  // The payload layout is [field, real_or_imag, x, y, row, col], C-order.
-  // Full matrices are stored so that no color information is discarded.
-  constexpr int nFields = 6;
-  const std::size_t matrixElements =
-      static_cast<std::size_t>(N) * N * Nc * Nc;
-  const std::size_t payloadElements =
-      static_cast<std::size_t>(nFields) * 2 * matrixElements;
-  std::vector<float> payload(payloadElements);
-
-  auto matrixAt = [lat](const int field, const int pos) -> const Matrix & {
-    switch (field) {
-      case 0:
-        return lat->Uy2[pos];
-      case 1:
-        return lat->Ux2[pos];
-      case 2:
-        return lat->U[pos];
-      case 3:
-        return lat->U2[pos];
-      case 4:
-        return lat->Ux[pos];
-      case 5:
-        return lat->Uy[pos];
-      default:
-        throw std::runtime_error("invalid evolved-field index");
-    }
-  };
-
-  for (int field = 0; field < nFields; ++field) {
-    const std::size_t realOffset =
-        static_cast<std::size_t>(2 * field) * matrixElements;
-    const std::size_t imagOffset = realOffset + matrixElements;
-    for (int x = 0; x < N; ++x) {
-      for (int y = 0; y < N; ++y) {
-        const int pos = x * N + y;
-        const Matrix &matrix = matrixAt(field, pos);
-        const std::complex<double> *elements = matrix.data();
-        const std::size_t siteOffset =
-            static_cast<std::size_t>(pos) * Nc * Nc;
-        for (int row = 0; row < Nc; ++row) {
-          for (int col = 0; col < Nc; ++col) {
-            const std::size_t element =
-                static_cast<std::size_t>(row) * Nc + col;
-            payload[realOffset + siteOffset + element] =
-                static_cast<float>(elements[element].real());
-            payload[imagOffset + siteOffset + element] =
-                static_cast<float>(elements[element].imag());
-          }
+    auto matrixAt = [lat](const int field, const int pos) -> const Matrix & {
+        switch (field) {
+            case 0:
+                return lat->Uy2[pos];
+            case 1:
+                return lat->Ux2[pos];
+            case 2:
+                return lat->U[pos];
+            case 3:
+                return lat->U2[pos];
+            case 4:
+                return lat->Ux[pos];
+            case 5:
+                return lat->Uy[pos];
+            default:
+                throw std::runtime_error("invalid evolved-field index");
         }
-      }
+    };
+
+    for (int field = 0; field < nFields; ++field) {
+        const std::size_t realOffset =
+            static_cast<std::size_t>(2 * field) * matrixElements;
+        const std::size_t imagOffset = realOffset + matrixElements;
+        for (int x = 0; x < N; ++x) {
+            for (int y = 0; y < N; ++y) {
+                const int pos = x * N + y;
+                const Matrix &matrix = matrixAt(field, pos);
+                const std::complex<double> *elements = matrix.data();
+                const std::size_t siteOffset =
+                    static_cast<std::size_t>(pos) * Nc * Nc;
+                for (int row = 0; row < Nc; ++row) {
+                    for (int col = 0; col < Nc; ++col) {
+                        const std::size_t element =
+                            static_cast<std::size_t>(row) * Nc + col;
+                        payload[realOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].real());
+                        payload[imagOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].imag());
+                    }
+                }
+            }
+        }
     }
-  }
 
-  // This binary format is explicitly little-endian. IP-Glasma production
-  // platforms are normally little-endian; fail loudly rather than emit an
-  // ambiguous file on another architecture.
-  const std::uint16_t endianProbe = 1;
-  if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
-    throw std::runtime_error(
-        "writeEvolvedFields currently requires a little-endian host");
-  }
+    // This binary format is explicitly little-endian. IP-Glasma production
+    // platforms are normally little-endian; fail loudly rather than emit an
+    // ambiguous file on another architecture.
+    const std::uint16_t endianProbe = 1;
+    if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
+        throw std::runtime_error(
+            "writeEvolvedFields currently requires a little-endian host");
+    }
 
-  std::stringstream metadata;
-  metadata << std::setprecision(17)
-           << "{\"format\":\"ipglasma-evolved-fields\","
-           << "\"version\":1,"
-           << "\"dtype\":\"<f4\","
-           << "\"shape\":[6,2," << N << "," << N << "," << Nc << ","
-           << Nc << "],"
-           << "\"axis_order\":[\"field\",\"complex_part\",\"x\",\"y\","
-              "\"row\",\"col\"],"
-           << "\"fields\":[\"phi\",\"pi\",\"E1\",\"E2\",\"Ux\","
-              "\"Uy\"],"
-           << "\"complex_part\":[\"real\",\"imag\"],"
-           << "\"native_site_index\":\"pos=x*N+y\","
-           << "\"event_id\":" << param->getEventId() << ","
-           << "\"step\":" << it << ","
-           << "\"tau_lattice\":" << tauLattice << ","
-           << "\"tau_fm\":" << tauFm << ","
-           << "\"momentum_tau_fm\":" << momentumTauFm << ","
-           << "\"a_fm\":" << a << ","
-           << "\"dtau_lattice\":" << dtau << ","
-           << "\"staggering\":\"Ux,Uy,phi at tau; E1,E2,pi at tau-dtau/2 "
-              "for step>0; all variables are the initialized tau=0+ values "
-              "for step=0\"}";
-  const std::string metadataString = metadata.str();
+    std::stringstream metadata;
+    metadata << std::setprecision(17)
+             << "{\"format\":\"ipglasma-evolved-fields\","
+             << "\"version\":1,"
+             << "\"dtype\":\"<f4\","
+             << "\"shape\":[6,2," << N << "," << N << "," << Nc << "," << Nc
+             << "],"
+             << "\"axis_order\":[\"field\",\"complex_part\",\"x\",\"y\","
+                "\"row\",\"col\"],"
+             << "\"fields\":[\"phi\",\"pi\",\"E1\",\"E2\",\"Ux\","
+                "\"Uy\"],"
+             << "\"complex_part\":[\"real\",\"imag\"],"
+             << "\"native_site_index\":\"pos=x*N+y\","
+             << "\"event_id\":" << param->getEventId() << ","
+             << "\"step\":" << it << ","
+             << "\"tau_lattice\":" << tauLattice << ","
+             << "\"tau_fm\":" << tauFm << ","
+             << "\"momentum_tau_fm\":" << momentumTauFm << ","
+             << "\"a_fm\":" << a << ","
+             << "\"dtau_lattice\":" << dtau << ","
+             << "\"staggering\":\"Ux,Uy,phi at tau; E1,E2,pi at tau-dtau/2 "
+                "for step>0; all variables are the initialized tau=0+ values "
+                "for step=0\"}";
+    const std::string metadataString = metadata.str();
 
-  stringstream filename;
-  filename << "evolvedFields" << param->getEventId() << "_it"
-           << std::setw(8) << std::setfill('0') << it << ".ipgf";
+    stringstream filename;
+    filename << "evolvedFields" << param->getEventId() << "_it" << std::setw(8)
+             << std::setfill('0') << it << ".ipgf";
 
-  ofstream output(
-      filename.str().c_str(), std::ios::out | std::ios::binary | std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error(
-        "could not open evolved-field snapshot " + filename.str());
-  }
+    ofstream output(
+        filename.str().c_str(),
+        std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error(
+            "could not open evolved-field snapshot " + filename.str());
+    }
 
-  const char magic[8] = {'I', 'P', 'G', 'F', 'L', 'D', '1', '\0'};
-  const std::uint64_t metadataBytes =
-      static_cast<std::uint64_t>(metadataString.size());
-  output.write(magic, sizeof(magic));
-  output.write(
-      reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
-  output.write(metadataString.data(), metadataString.size());
-  output.write(
-      reinterpret_cast<const char *>(payload.data()),
-      static_cast<std::streamsize>(payload.size() * sizeof(float)));
-  output.close();
+    const char magic[8] = {'I', 'P', 'G', 'F', 'L', 'D', '1', '\0'};
+    const std::uint64_t metadataBytes =
+        static_cast<std::uint64_t>(metadataString.size());
+    output.write(magic, sizeof(magic));
+    output.write(
+        reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
+    output.write(metadataString.data(), metadataString.size());
+    output.write(
+        reinterpret_cast<const char *>(payload.data()),
+        static_cast<std::streamsize>(payload.size() * sizeof(float)));
+    output.close();
 
-  if (!output) {
-    throw std::runtime_error(
-        "failed while writing evolved-field snapshot " + filename.str());
-  }
-  cout << "Wrote evolved fields at tau=" << tauFm << " fm/c to "
-       << filename.str() << endl;
+    if (!output) {
+        throw std::runtime_error(
+            "failed while writing evolved-field snapshot " + filename.str());
+    }
+    cout << "Wrote evolved fields at tau=" << tauFm << " fm/c to "
+         << filename.str() << endl;
 }
 
-
 void Evolution::writeGluonMultiplicityTarget(
-    Parameters *param, int it, double a, double dtau,
-    double dNPrimary, double dNBinned,
-    double dEPrimary, double dEBinned,
-    double dNCut3, double dECut3,
-    double dNCut6, double dECut6,
-    const double *spectrumN, const double *spectrumE,
-    const int *spectrumCounts, int bins, double dkt) {
-  IPG_PROFILE_SCOPE("output.gluon_target");
-  stringstream filename;
-  filename << "gluonMultiplicity" << param->getEventId() << ".json";
-  ofstream output(filename.str().c_str(), std::ios::out | std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error(
-        "could not open gluon-multiplicity target " + filename.str());
-  }
+    Parameters *param, int it, double a, double dtau, double dNPrimary,
+    double dNBinned, double dEPrimary, double dEBinned, double dNCut3,
+    double dECut3, double dNCut6, double dECut6, const double *spectrumN,
+    const double *spectrumE, const int *spectrumCounts, int bins, double dkt) {
+    IPG_PROFILE_SCOPE("output.gluon_target");
+    stringstream filename;
+    filename << "gluonMultiplicity" << param->getEventId() << ".json";
+    ofstream output(filename.str().c_str(), std::ios::out | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error(
+            "could not open gluon-multiplicity target " + filename.str());
+    }
 
-  const char *rapidityVariable =
-      (param->getUsePseudoRapidity() == 0) ? "y" : "eta";
-  const double meanKt = (dNPrimary != 0.0) ? dEPrimary / dNPrimary : 0.0;
-  const double spectrumUnitFactor = (a / hbarc) * (a / hbarc);
+    const char *rapidityVariable =
+        (param->getUsePseudoRapidity() == 0) ? "y" : "eta";
+    const double meanKt = (dNPrimary != 0.0) ? dEPrimary / dNPrimary : 0.0;
+    const double spectrumUnitFactor = (a / hbarc) * (a / hbarc);
 
-  output << std::setprecision(17)
-         << "{\n"
-         << "  \"format\": \"ipglasma-gluon-target\",\n"
-         << "  \"version\": 1,\n"
-         << "  \"event_id\": " << param->getEventId() << ",\n"
-         << "  \"step\": " << it << ",\n"
-         << "  \"tau_fm\": " << static_cast<double>(it) * dtau * a << ",\n"
-         << "  \"rapidity_variable\": \"" << rapidityVariable << "\",\n"
-         << "  \"dN\": " << dNPrimary << ",\n"
-         << "  \"dN_binned_check\": " << dNBinned << ",\n"
-         << "  \"dE_GeV\": " << dEPrimary << ",\n"
-         << "  \"dE_binned_check_GeV\": " << dEBinned << ",\n"
-         << "  \"mean_kT_GeV\": " << meanKt << ",\n"
-         << "  \"dN_kT_gt_3_GeV\": " << dNCut3 << ",\n"
-         << "  \"dE_kT_gt_3_GeV\": " << dECut3 << ",\n"
-         << "  \"dN_kT_gt_6_GeV\": " << dNCut6 << ",\n"
-         << "  \"dE_kT_gt_6_GeV\": " << dECut6 << ",\n"
-         << "  \"Npart\": " << param->getNpart() << ",\n"
-         << "  \"Tpp\": " << param->getTpp() << ",\n"
-         << "  \"impact_parameter_fm\": " << param->getb() << ",\n"
-         << "  \"random_seed\": " << param->getRandomSeed() << ",\n"
-         << "  \"spectrum_definition\": \"azimuthally averaged Coulomb-gauge gluon spectrum used by Evolution::multiplicity\",\n"
-         << "  \"kt_GeV\": [";
+    output << std::setprecision(17) << "{\n"
+           << "  \"format\": \"ipglasma-gluon-target\",\n"
+           << "  \"version\": 1,\n"
+           << "  \"event_id\": " << param->getEventId() << ",\n"
+           << "  \"step\": " << it << ",\n"
+           << "  \"tau_fm\": " << static_cast<double>(it) * dtau * a << ",\n"
+           << "  \"rapidity_variable\": \"" << rapidityVariable << "\",\n"
+           << "  \"dN\": " << dNPrimary << ",\n"
+           << "  \"dN_binned_check\": " << dNBinned << ",\n"
+           << "  \"dE_GeV\": " << dEPrimary << ",\n"
+           << "  \"dE_binned_check_GeV\": " << dEBinned << ",\n"
+           << "  \"mean_kT_GeV\": " << meanKt << ",\n"
+           << "  \"dN_kT_gt_3_GeV\": " << dNCut3 << ",\n"
+           << "  \"dE_kT_gt_3_GeV\": " << dECut3 << ",\n"
+           << "  \"dN_kT_gt_6_GeV\": " << dNCut6 << ",\n"
+           << "  \"dE_kT_gt_6_GeV\": " << dECut6 << ",\n"
+           << "  \"Npart\": " << param->getNpart() << ",\n"
+           << "  \"Tpp\": " << param->getTpp() << ",\n"
+           << "  \"impact_parameter_fm\": " << param->getb() << ",\n"
+           << "  \"random_seed\": " << param->getRandomSeed() << ",\n"
+           << "  \"spectrum_definition\": \"azimuthally averaged Coulomb-gauge "
+              "gluon spectrum used by Evolution::multiplicity\",\n"
+           << "  \"kt_GeV\": [";
 
-  for (int ik = 0; ik < bins; ++ik) {
-    if (ik != 0) output << ",";
-    output << (static_cast<double>(ik) + 0.5) * dkt / a * hbarc;
-  }
-  output << "],\n  \"dN_d2k_GeV_minus2\": [";
-  for (int ik = 0; ik < bins; ++ik) {
-    if (ik != 0) output << ",";
-    output << spectrumN[ik] * spectrumUnitFactor;
-  }
-  output << "],\n  \"dE_d2k_GeV_minus1\": [";
-  for (int ik = 0; ik < bins; ++ik) {
-    if (ik != 0) output << ",";
-    output << spectrumE[ik] * spectrumUnitFactor;
-  }
-  output << "],\n  \"lattice_bin_counts\": [";
-  for (int ik = 0; ik < bins; ++ik) {
-    if (ik != 0) output << ",";
-    output << spectrumCounts[ik];
-  }
-  output << "]\n}\n";
-  output.close();
+    for (int ik = 0; ik < bins; ++ik) {
+        if (ik != 0) output << ",";
+        output << (static_cast<double>(ik) + 0.5) * dkt / a * hbarc;
+    }
+    output << "],\n  \"dN_d2k_GeV_minus2\": [";
+    for (int ik = 0; ik < bins; ++ik) {
+        if (ik != 0) output << ",";
+        output << spectrumN[ik] * spectrumUnitFactor;
+    }
+    output << "],\n  \"dE_d2k_GeV_minus1\": [";
+    for (int ik = 0; ik < bins; ++ik) {
+        if (ik != 0) output << ",";
+        output << spectrumE[ik] * spectrumUnitFactor;
+    }
+    output << "],\n  \"lattice_bin_counts\": [";
+    for (int ik = 0; ik < bins; ++ik) {
+        if (ik != 0) output << ",";
+        output << spectrumCounts[ik];
+    }
+    output << "]\n}\n";
+    output.close();
 
-  if (!output) {
-    throw std::runtime_error(
-        "failed while writing gluon-multiplicity target " + filename.str());
-  }
-  cout << "Wrote gluon target dN/d" << rapidityVariable << "=" << dNPrimary
-       << " to " << filename.str() << endl;
+    if (!output) {
+        throw std::runtime_error(
+            "failed while writing gluon-multiplicity target " + filename.str());
+    }
+    cout << "Wrote gluon target dN/d" << rapidityVariable << "=" << dNPrimary
+         << " to " << filename.str() << endl;
 }
 
 void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
@@ -733,10 +720,10 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 
     // E and Pi at tau=dtau/2 are equal to the initial ones (at tau=0)
     // now evolve phi and U to time tau=dtau.
-  if (param->getWriteOutputs() == 5) {
-    // Save the initialized forward-light-cone state at tau=0+.
-    //writeEvolvedFields(lat, param, 0);
-  }
+    if (param->getWriteOutputs() == 5) {
+        // Save the initialized forward-light-cone state at tau=0+.
+        // writeEvolvedFields(lat, param, 0);
+    }
     {
         IPG_PROFILE_SCOPE("evolution.initial_coordinate_half_step");
         evolvePhi(lat, param, dtau, 0.);
@@ -744,10 +731,10 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     }
 
     int itmax = static_cast<int>(maxtime / (a * dtau) + 0.00000000001);
-    int it0   = static_cast<int>(0.1/(a*dtau) + 0.0000000001);
-    int it1   = static_cast<int>(0.2/(a*dtau) + 0.0000000001);
-    int it2   = static_cast<int>(0.3/(a*dtau) + 0.0000000001);
-    int it3   = static_cast<int>(0.4/(a*dtau) + 0.0000000001);
+    int it0 = static_cast<int>(0.1 / (a * dtau) + 0.0000000001);
+    int it1 = static_cast<int>(0.2 / (a * dtau) + 0.0000000001);
+    int it2 = static_cast<int>(0.3 / (a * dtau) + 0.0000000001);
+    int it3 = static_cast<int>(0.4 / (a * dtau) + 0.0000000001);
 
     // Tmunu is defined at the integer coordinate time tau_n, while the
     // leapfrog momenta E1, E2, and pi live at tau_{n-1/2}.  Keep reusable
@@ -759,14 +746,14 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
     std::vector<Matrix> tmunuPiBackup(latticeSites);
 
     cout << "Starting evolution: num of time steps=" << itmax << "" << endl;
-    if ( (param->getWriteOutputs() == 5) ) {
-      cout << "Measuring at times " << it0 * a * dtau << ", "  << it1 * a * dtau << ", "
-	   << it2 * a * dtau << ", "  << it3 * a * dtau << ", "  << itmax * a * dtau << ". " << endl;
+    if ((param->getWriteOutputs() == 5)) {
+        cout << "Measuring at times " << it0 * a * dtau << ", "
+             << it1 * a * dtau << ", " << it2 * a * dtau << ", "
+             << it3 * a * dtau << ", " << itmax * a * dtau << ". " << endl;
     }
     cout << " a = " << a << endl;
     cout << " dtau = " << dtau << endl;
     cout << " it0 = " << it0 << endl;
-
 
     // do evolution
     for (int it = 1; it <= itmax; it++) {
@@ -792,7 +779,7 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
         if (finalTmunuMeasurement) {
             Tmunu(lat, param, it);
             if (param->getWriteOutputs() == 5) {
-              // writeEvolvedFields(lat, param, it);
+                // writeEvolvedFields(lat, param, it);
             }
             // Hydro flow fields are optional. Tmunu output remains available
             // through the lightweight writer when the expensive eigen solve is
@@ -807,9 +794,9 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
 
         if (intermediateTmunuMeasurement) {
             Tmunu(lat, param, it);
-            //writeEvolvedFields(lat, param, it);
-            // Preserve the historical intermediate-time finalFlag=false path
-            // when hydro output is enabled.
+            // writeEvolvedFields(lat, param, it);
+            //  Preserve the historical intermediate-time finalFlag=false path
+            //  when hydro output is enabled.
             if (param->getWriteEpsilonUHydro() != 0) {
                 u(lat, param, it, false);
             } else {
@@ -819,9 +806,12 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
         }
 
         if (measureTmunu) {
-            std::copy(tmunuE1Backup.begin(), tmunuE1Backup.end(), lat->U.begin());
-            std::copy(tmunuE2Backup.begin(), tmunuE2Backup.end(), lat->U2.begin());
-            std::copy(tmunuPiBackup.begin(), tmunuPiBackup.end(), lat->Ux2.begin());
+            std::copy(
+                tmunuE1Backup.begin(), tmunuE1Backup.end(), lat->U.begin());
+            std::copy(
+                tmunuE2Backup.begin(), tmunuE2Backup.end(), lat->U2.begin());
+            std::copy(
+                tmunuPiBackup.begin(), tmunuPiBackup.end(), lat->Ux2.begin());
         }
 
         if (it % 10 == 1) {
@@ -853,12 +843,14 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
                     y = -L / 2. + a * iy;
 
                     if (param->getRunningCoupling()) {
-                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                            && pos % N < N - 1) {
                             g2mu2A = lat->cells[pos]->getg2mu2A();
                         } else
                             g2mu2A = 0;
 
-                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                            && pos % N < N - 1) {
                             g2mu2B = lat->cells[pos]->getg2mu2B();
                         } else
                             g2mu2B = 0;
@@ -936,12 +928,14 @@ void Evolution::run(Lattice *lat, Group *group, Parameters *param) {
                     y = -L / 2. + a * iy;
 
                     if (param->getRunningCoupling()) {
-                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                            && pos % N < N - 1) {
                             g2mu2A = lat->cells[pos]->getg2mu2A();
                         } else
                             g2mu2A = 0;
 
-                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                        if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                            && pos % N < N - 1) {
                             g2mu2B = lat->cells[pos]->getg2mu2B();
                         } else
                             g2mu2B = 0;
@@ -1163,465 +1157,467 @@ void Evolution::Tmunu(Lattice *lat, Parameters *param, int it) {
         Matrix E1AtYToPos(Nc);
         Matrix E2AtXToPos(Nc);
 
-
-    // set plaquette in every cell
+        // set plaquette in every cell
 #pragma omp for
         for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            pos = i * N + j;
+            for (int j = 0; j < N; j++) {
+                pos = i * N + j;
 
-            // Tmunu uses centered/forward/backward stencils that require a
-            // genuine one-cell neighborhood.  Treat the outermost lattice
-            // cells as a nonphysical guard region instead of constructing
-            // clamped, gauge-noncovariant boundary plaquettes.
-            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
-                lat->Uy1[pos] = one;
-                continue;
+                // Tmunu uses centered/forward/backward stencils that require a
+                // genuine one-cell neighborhood.  Treat the outermost lattice
+                // cells as a nonphysical guard region instead of constructing
+                // clamped, gauge-noncovariant boundary plaquettes.
+                if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                    lat->Uy1[pos] = one;
+                    continue;
+                }
+
+                posX = lat->pospX[pos];
+                posY = lat->pospY[pos];
+
+                UDx = lat->Ux[posY];
+                UDy = lat->Uy[pos];
+                UDx.conjg();
+                UDy.conjg();
+
+                Uplaq = lat->Ux[pos] * (lat->Uy[posX] * (UDx * UDy));
+                lat->Uy1[pos] = (Uplaq);
             }
-
-            posX = lat->pospX[pos];
-            posY = lat->pospY[pos];
-
-            UDx = lat->Ux[posY];
-            UDy = lat->Uy[pos];
-            UDx.conjg();
-            UDy.conjg();
-
-            Uplaq = lat->Ux[pos]
-                    * (lat->Uy[posX] * (UDx * UDy));
-            lat->Uy1[pos] = (Uplaq);
         }
-    }
 
-    // T^\tau\tau, Txx, Tyy, Tetaeta:
-    // electric part:
+        // T^\tau\tau, Txx, Tyy, Tetaeta:
+        // electric part:
 #pragma omp for
         for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            pos = i * N + j;
+            for (int j = 0; j < N; j++) {
+                pos = i * N + j;
+                if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                    lat->cells[pos]->setTtautau(0.);
+                    lat->cells[pos]->setTxx(0.);
+                    lat->cells[pos]->setTyy(0.);
+                    lat->cells[pos]->setTetaeta(0.);
+                    continue;
+                }
+                posX = lat->pospX[pos];
+                posY = lat->pospY[pos];
+
+                posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
+
+                E1 = lat->U[pos];
+                E2 = lat->U2[pos];
+                E1p = lat->U[posY];
+                E2p = lat->U2[posX];  // shift y value in x direction
+
+                pi = lat->Ux2[pos];
+                piX = lat->Ux2[posX];
+                piY = lat->Ux2[posY];
+                piXY = lat->Ux2[posXY];
+
+                // These observables only need traces of matrix squares.
+                // Computing the complete 3x3 products here used to create 32
+                // Matrix temporaries per site (the same eight traces repeated
+                // for four tensor components).  Evaluate each SU(3) trace once
+                // and reuse it.
+                const double e1Sq = su3::traceSquare(E1).real();
+                const double e1pSq = su3::traceSquare(E1p).real();
+                const double e2Sq = su3::traceSquare(E2).real();
+                const double e2pSq = su3::traceSquare(E2p).real();
+                const double piSq = su3::traceSquare(pi).real();
+                const double piXSq = su3::traceSquare(piX).real();
+                const double piYSq = su3::traceSquare(piY).real();
+                const double piXYSq = su3::traceSquare(piXY).real();
+
+                const double invTau2 = 1. / (it * dtau) / (it * dtau);
+                const double electricPrefactor =
+                    g * g / (it * dtau) / (it * dtau);
+                const double eSum = e1Sq + e1pSq + e2Sq + e2pSq;
+                const double piSum = piSq + piXSq + piYSq + piXYSq;
+
+                lat->cells[pos]->setTtautau(
+                    electricPrefactor * eSum / 2. + piSum / 4.);
+                lat->cells[pos]->setTxx(
+                    electricPrefactor * (-e1Sq - e1pSq + e2Sq + e2pSq) / 2.
+                    + piSum / 4.);
+                lat->cells[pos]->setTyy(
+                    electricPrefactor * (e1Sq + e1pSq - e2Sq - e2pSq) / 2.
+                    + piSum / 4.);
+                lat->cells[pos]->setTetaeta(
+                    invTau2 * (electricPrefactor * eSum / 2. - piSum / 4.));
+            }
+        }
+
+#pragma omp for
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                pos = i * N + j;
+                if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                    continue;
+                }
+
+                posX = lat->pospX[pos];
+                posY = lat->pospY[pos];
+
+                posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
+
+                Uplaq = lat->Uy1[pos];
+
+                phi = lat->Uy2[pos];
+                phiX = lat->Uy2[posX];
+                phiY = lat->Uy2[posY];
+                phiXY = lat->Uy2[posXY];
+
+                Ux = lat->Ux[pos];
+                Uy = lat->Uy[pos];
+                UDx = Ux;
+                UDx.conjg();
+                UDy = Uy;
+                UDy.conjg();
+
+                phiTildeX = Ux * phiX * UDx;
+                phiTildeY = Uy * phiY * UDy;
+
+                // same at one up in the other direction
+                Ux = lat->Ux[posY];
+                Uy = lat->Uy[posX];
+                UDx = Ux;
+                UDx.conjg();
+                UDy = Uy;
+                UDy.conjg();
+
+                phiTildeXY1 = Ux * phiXY * UDx;
+                phiTildeXY2 = Uy * phiXY * UDy;
+
+                // The four covariant-gradient square traces are likewise shared
+                // by all diagonal tensor components.  Evaluate (A-B)^2 directly
+                // in the trace kernel, avoiding both subtraction and product
+                // Matrix temporaries.
+                const double gradX0 =
+                    su3::traceDifferenceSquare(phi, phiTildeX).real();
+                const double gradX1 =
+                    su3::traceDifferenceSquare(phiY, phiTildeXY1).real();
+                const double gradY0 =
+                    su3::traceDifferenceSquare(phi, phiTildeY).real();
+                const double gradY1 =
+                    su3::traceDifferenceSquare(phiX, phiTildeXY2).real();
+                const double invTau2 = 1. / (it * dtau) / (it * dtau);
+                const double gradientPrefactor =
+                    0.5 / (it * dtau) / (it * dtau);
+                const double plaquetteEnergy =
+                    2. / pow(g, 2.)
+                    * (static_cast<double>(Nc) - su3::trace(Uplaq).real());
+
+                lat->cells[pos]->setTtautau(
+                    lat->cells[pos]->getTtautau() + plaquetteEnergy
+                    + gradientPrefactor * (gradX0 + gradX1 + gradY0 + gradY1));
+
+                lat->cells[pos]->setTxx(
+                    lat->cells[pos]->getTxx() + plaquetteEnergy
+                    + gradientPrefactor * (gradX0 + gradX1 - gradY0 - gradY1));
+
+                lat->cells[pos]->setTyy(
+                    lat->cells[pos]->getTyy() + plaquetteEnergy
+                    + gradientPrefactor * (-gradX0 - gradX1 + gradY0 + gradY1));
+
+                lat->cells[pos]->setTetaeta(
+                    lat->cells[pos]->getTetaeta()
+                    + invTau2
+                          * (-plaquetteEnergy
+                             + gradientPrefactor
+                                   * (gradX0 + gradX1 + gradY0 + gradY1)));
+            }
+        }
+
+#pragma omp for
+        for (pos = 0; pos < N * N; pos++) {
+            const int i = pos / N;
+            const int j = pos - i * N;
             if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                lat->cells[pos]->setEpsilon(0.);
                 lat->cells[pos]->setTtautau(0.);
                 lat->cells[pos]->setTxx(0.);
                 lat->cells[pos]->setTyy(0.);
                 lat->cells[pos]->setTetaeta(0.);
                 continue;
             }
-            posX = lat->pospX[pos];
-            posY = lat->pospY[pos];
-
-            posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
-
-            E1 = lat->U[pos];
-            E2 = lat->U2[pos];
-            E1p = lat->U[posY];
-            E2p = lat->U2[posX];  // shift y value in x direction
-
-            pi = lat->Ux2[pos];
-            piX = lat->Ux2[posX];
-            piY = lat->Ux2[posY];
-            piXY = lat->Ux2[posXY];
-
-            // These observables only need traces of matrix squares.  Computing
-            // the complete 3x3 products here used to create 32 Matrix
-            // temporaries per site (the same eight traces repeated for four
-            // tensor components).  Evaluate each SU(3) trace once and reuse it.
-            const double e1Sq = su3::traceSquare(E1).real();
-            const double e1pSq = su3::traceSquare(E1p).real();
-            const double e2Sq = su3::traceSquare(E2).real();
-            const double e2pSq = su3::traceSquare(E2p).real();
-            const double piSq = su3::traceSquare(pi).real();
-            const double piXSq = su3::traceSquare(piX).real();
-            const double piYSq = su3::traceSquare(piY).real();
-            const double piXYSq = su3::traceSquare(piXY).real();
-
-            const double invTau2 = 1. / (it * dtau) / (it * dtau);
-            const double electricPrefactor =
-                g * g / (it * dtau) / (it * dtau);
-            const double eSum = e1Sq + e1pSq + e2Sq + e2pSq;
-            const double piSum = piSq + piXSq + piYSq + piXYSq;
-
+            // clean up numerical noise outside the interaction region
+            // if (lat->cells[pos]->getg2mu2A() < 1e-12
+            //    || lat->cells[pos]->getg2mu2B() < 1e-12) {
+            //    lat->cells[pos]->setEpsilon(0.);
+            //    lat->cells[pos]->setTtautau(0.);
+            //    lat->cells[pos]->setTxx(0.);
+            //    lat->cells[pos]->setTyy(0.);
+            //    lat->cells[pos]->setTetaeta(0.);
+            //} else {
+            lat->cells[pos]->setEpsilon(
+                lat->cells[pos]->getTtautau() * 1 / pow(a, 4.));
             lat->cells[pos]->setTtautau(
-                electricPrefactor * eSum / 2. + piSum / 4.);
-            lat->cells[pos]->setTxx(
-                electricPrefactor * (-e1Sq - e1pSq + e2Sq + e2pSq) / 2.
-                + piSum / 4.);
-            lat->cells[pos]->setTyy(
-                electricPrefactor * (e1Sq + e1pSq - e2Sq - e2pSq) / 2.
-                + piSum / 4.);
+                lat->cells[pos]->getTtautau() * 1 / pow(a, 4.));
+            lat->cells[pos]->setTxx(lat->cells[pos]->getTxx() * 1 / pow(a, 4.));
+            lat->cells[pos]->setTyy(lat->cells[pos]->getTyy() * 1 / pow(a, 4.));
             lat->cells[pos]->setTetaeta(
-                invTau2 * (electricPrefactor * eSum / 2. - piSum / 4.));
+                lat->cells[pos]->getTetaeta() * 1 / pow(a, 6.));
+            //}
         }
-    }
 
-#pragma omp for
-        for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            pos = i * N + j;
-            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
-                continue;
-            }
-
-            posX = lat->pospX[pos];
-            posY = lat->pospY[pos];
-
-            posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
-
-            Uplaq = lat->Uy1[pos];
-
-            phi = lat->Uy2[pos];
-            phiX = lat->Uy2[posX];
-            phiY = lat->Uy2[posY];
-            phiXY = lat->Uy2[posXY];
-
-            Ux = lat->Ux[pos];
-            Uy = lat->Uy[pos];
-            UDx = Ux;
-            UDx.conjg();
-            UDy = Uy;
-            UDy.conjg();
-
-            phiTildeX = Ux * phiX * UDx;
-            phiTildeY = Uy * phiY * UDy;
-
-            // same at one up in the other direction
-            Ux = lat->Ux[posY];
-            Uy = lat->Uy[posX];
-            UDx = Ux;
-            UDx.conjg();
-            UDy = Uy;
-            UDy.conjg();
-
-            phiTildeXY1 = Ux * phiXY * UDx;
-            phiTildeXY2 = Uy * phiXY * UDy;
-
-            // The four covariant-gradient square traces are likewise shared
-            // by all diagonal tensor components.  Evaluate (A-B)^2 directly
-            // in the trace kernel, avoiding both subtraction and product
-            // Matrix temporaries.
-            const double gradX0 =
-                su3::traceDifferenceSquare(phi, phiTildeX).real();
-            const double gradX1 =
-                su3::traceDifferenceSquare(phiY, phiTildeXY1).real();
-            const double gradY0 =
-                su3::traceDifferenceSquare(phi, phiTildeY).real();
-            const double gradY1 =
-                su3::traceDifferenceSquare(phiX, phiTildeXY2).real();
-            const double invTau2 = 1. / (it * dtau) / (it * dtau);
-            const double gradientPrefactor =
-                0.5 / (it * dtau) / (it * dtau);
-            const double plaquetteEnergy =
-                2. / pow(g, 2.)
-                * (static_cast<double>(Nc) - su3::trace(Uplaq).real());
-
-            lat->cells[pos]->setTtautau(
-                lat->cells[pos]->getTtautau() + plaquetteEnergy
-                + gradientPrefactor * (gradX0 + gradX1 + gradY0 + gradY1));
-
-            lat->cells[pos]->setTxx(
-                lat->cells[pos]->getTxx() + plaquetteEnergy
-                + gradientPrefactor * (gradX0 + gradX1 - gradY0 - gradY1));
-
-            lat->cells[pos]->setTyy(
-                lat->cells[pos]->getTyy() + plaquetteEnergy
-                + gradientPrefactor * (-gradX0 - gradX1 + gradY0 + gradY1));
-
-            lat->cells[pos]->setTetaeta(
-                lat->cells[pos]->getTetaeta()
-                + invTau2
-                      * (-plaquetteEnergy
-                         + gradientPrefactor
-                               * (gradX0 + gradX1 + gradY0 + gradY1)));
-        }
-    }
-
-#pragma omp for
-        for (pos = 0; pos < N * N; pos++) {
-        const int i = pos / N;
-        const int j = pos - i * N;
-        if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
-            lat->cells[pos]->setEpsilon(0.);
-            lat->cells[pos]->setTtautau(0.);
-            lat->cells[pos]->setTxx(0.);
-            lat->cells[pos]->setTyy(0.);
-            lat->cells[pos]->setTetaeta(0.);
-            continue;
-        }
-        // clean up numerical noise outside the interaction region
-        // if (lat->cells[pos]->getg2mu2A() < 1e-12
-        //    || lat->cells[pos]->getg2mu2B() < 1e-12) {
-        //    lat->cells[pos]->setEpsilon(0.);
-        //    lat->cells[pos]->setTtautau(0.);
-        //    lat->cells[pos]->setTxx(0.);
-        //    lat->cells[pos]->setTyy(0.);
-        //    lat->cells[pos]->setTetaeta(0.);
-        //} else {
-        lat->cells[pos]->setEpsilon(
-            lat->cells[pos]->getTtautau() * 1 / pow(a, 4.));
-        lat->cells[pos]->setTtautau(
-            lat->cells[pos]->getTtautau() * 1 / pow(a, 4.));
-        lat->cells[pos]->setTxx(lat->cells[pos]->getTxx() * 1 / pow(a, 4.));
-        lat->cells[pos]->setTyy(lat->cells[pos]->getTyy() * 1 / pow(a, 4.));
-        lat->cells[pos]->setTetaeta(
-            lat->cells[pos]->getTetaeta() * 1 / pow(a, 6.));
-        //}
-    }
-
-    // T^\tau x, T^\tau y
+        // T^\tau x, T^\tau y
 #pragma omp for reduction(+ : averageTtautau, averageTtaueta, averageTxx)
         for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            pos = i * N + j;
-            if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
-                lat->cells[pos]->setTtaux(0.);
-                lat->cells[pos]->setTtauy(0.);
-                lat->cells[pos]->setTtaueta(0.);
-                lat->cells[pos]->setTxy(0.);
-                lat->cells[pos]->setTxeta(0.);
-                lat->cells[pos]->setTyeta(0.);
-                continue;
+            for (int j = 0; j < N; j++) {
+                pos = i * N + j;
+                if (i == 0 || j == 0 || i == N - 1 || j == N - 1) {
+                    lat->cells[pos]->setTtaux(0.);
+                    lat->cells[pos]->setTtauy(0.);
+                    lat->cells[pos]->setTtaueta(0.);
+                    lat->cells[pos]->setTxy(0.);
+                    lat->cells[pos]->setTxeta(0.);
+                    lat->cells[pos]->setTyeta(0.);
+                    continue;
+                }
+                posX = lat->pospX[pos];
+                posY = lat->pospY[pos];
+                posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
+
+                posmX = lat->posmX[pos];
+                posmY = lat->posmY[pos];
+
+                posmXpY = lat->posmXpY[pos];
+                pospXmY = lat->pospXmY[pos];
+
+                pos2X = std::min(N - 1, i + 2) * N + j;
+                pos2Y = i * N + std::min(N - 1, j + 2);
+
+                pos2XY = std::min(N - 1, i + 2) * N + std::min(N - 1, j + 1);
+                posX2Y = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 2);
+
+                E1 = lat->U[pos];
+                E2 = lat->U2[pos];
+                E1p = lat->U[posY];   // shift x value in y direction
+                E2p = lat->U2[posX];  // shift y value in x direction
+
+                pi = lat->Ux2[pos];
+                piX = lat->Ux2[posX];
+                piY = lat->Ux2[posY];
+                piXY = lat->Ux2[posXY];
+
+                phi = lat->Uy2[pos];
+                phimX = lat->Uy2[posmX];
+                phiX = lat->Uy2[posX];
+                phimY = lat->Uy2[posmY];
+                phiY = lat->Uy2[posY];
+                phiXY = lat->Uy2[posXY];
+                phimXpY = lat->Uy2[posmXpY];
+                phipXmY = lat->Uy2[pospXmY];
+                phi2X = lat->Uy2[pos2X];
+                phi2XY = lat->Uy2[pos2XY];
+                phi2Y = lat->Uy2[pos2Y];
+                phiX2Y = lat->Uy2[posX2Y];
+
+                Ux = lat->Ux[pos];
+                UDx = Ux;
+                UDx.conjg();
+
+                UxmX = lat->Ux[posmX];
+                UDxmX = lat->Ux[posmX];
+                UDxmX.conjg();
+                UxmXpY = lat->Ux[posmXpY];
+                UDxmXpY = lat->Ux[posmXpY];
+                UDxmXpY.conjg();
+
+                UxpX = lat->Ux[posX];
+                UxpY = lat->Ux[posY];
+                UDxpX = UxpX;
+                UDxpX.conjg();
+                UDxpY = UxpY;
+                UDxpY.conjg();
+
+                UxpXpY = lat->Ux[posXY];
+                UDxpXpY = lat->Ux[posXY];
+                UDxpXpY.conjg();
+                UxmXpY = lat->Ux[posmXpY];
+                UDxmXpY = UxmXpY;
+                UDxmXpY.conjg();
+
+                Uy = lat->Uy[pos];
+                UDy = Uy;
+                UDy.conjg();
+
+                UymY = lat->Uy[posmY];
+                UDymY = lat->Uy[posmY];
+                UDymY.conjg();
+                UypXmY = lat->Uy[pospXmY];
+                UDypXmY = lat->Uy[pospXmY];
+                UDypXmY.conjg();
+
+                UypY = lat->Uy[posY];
+                UypX = lat->Uy[posX];
+                UDypX = UypX;
+                UDypX.conjg();
+
+                UDypY = lat->Uy[posY];
+                UDypY.conjg();
+
+                UDxpX = lat->Ux[posX];
+                UDxpX.conjg();
+
+                Uyp2X = lat->Uy[pos2X];
+                UDyp2X = Uyp2X;
+                UDyp2X.conjg();
+                Uxp2Y = lat->Ux[pos2Y];
+                UDxp2Y = Uxp2Y;
+                UDxp2Y.conjg();
+
+                UypXpY = lat->Uy[posXY];
+                UDypXpY = lat->Uy[posXY];
+                UDypXpY.conjg();
+                UymX = lat->Uy[posmX];
+                UDymX = UymX;
+                UDymX.conjg();
+                UxmY = lat->Ux[posmY];
+                UDxmY = UxmY;
+                UDxmY.conjg();
+                UypXmY = lat->Uy[pospXmY];
+
+                // Cache the repeated four-link magnetic structures once per
+                // site. The historical expressions recomputed every four-link
+                // chain once for the matrix difference and again for its trace
+                // subtraction, then repeated the same structures in
+                // Txeta/Tyeta. Preserve the original product ordering, but
+                // materialize each traceless difference only once and reuse it
+                // below.
+                chainA = Uy * UxpY * UDypX * UDx;
+                chainB = Ux * UypX * UDxpY * UDy;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinus0);
+
+                chainA = UDxmX * UymX * UxmXpY * UDy;
+                chainB = Uy * UDxmXpY * UDymX * UxmX;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusM);
+
+                chainA = UypX * UxpXpY * UDyp2X * UDxpX;
+                chainB = UxpX * Uyp2X * UDxpXpY * UDypX;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusP);
+
+                chainA = UDx * Uy * UxpY * UDypX;
+                chainB = UypX * UDxpY * UDy * Ux;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusT);
+
+                xMinusSum0 = xMinus0 + xMinusM;
+                xMinusSum1 = xMinusP + xMinusT;
+
+                // The first y-oriented difference is the opposite orientation
+                // of xMinus0 and can be reused by a sign flip.
+                yPlus0 = (-1.) * xMinus0;
+
+                chainA = UDymY * UxmY * UypXmY * UDx;
+                chainB = Ux * UDypXmY * UDxmY * UymY;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusM);
+
+                chainA = UxpY * UypXpY * UDxp2Y * UDypY;
+                chainB = UypY * Uxp2Y * UDypXpY * UDxpY;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusP);
+
+                chainA = UDy * Ux * UypX * UDxpY;
+                chainB = UxpY * UDypX * UDx * Uy;
+                makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusT);
+
+                yPlusSum0 = yPlus0 + yPlusM;
+                yPlusSum1 = yPlusP + yPlusT;
+
+                // Cache covariant scalar gradients shared by Txy, Ttaueta,
+                // Txeta, and Tyeta.
+                covGradX0 = Ux * phiX * UDx - phi;
+                covGradY0 = Uy * phiY * UDy - phi;
+                gradXAtY = UxpY * phiXY * UDxpY - phiY;
+                gradYAtX = UypX * phiXY * UDypX - phiX;
+                gradXAtYToPos = Uy * gradXAtY * UDy;
+                gradYAtXToPos = Ux * gradYAtX * UDx;
+
+                chainA = E2 * xMinusSum0 + E2p * xMinusSum1;
+                const complex<double> ttauxPiTrace =
+                    su3::traceABCD(pi, Ux, phiX, UDx)
+                    - su3::traceABCD(pi, UDxmX, phimX, UxmX)
+                    + su3::traceABCD(piY, UxpY, phiXY, UDxpY)
+                    - su3::traceABCD(piY, UDxmXpY, phimXpY, UxmXpY)
+                    + su3::traceABCD(piX, UxpX, phi2X, UDxpX)
+                    - su3::traceABCD(piX, UDx, phi, Ux)
+                    + su3::traceABCD(piXY, UxpXpY, phi2XY, UDxpXpY)
+                    - su3::traceABCD(piXY, UDxpY, phiY, UxpY);
+                lat->cells[pos]->setTtaux(
+                    +2. / (it * dtau) / 8. * chainA.trace().imag()
+                    - 2. / 8. / (it * dtau) * ttauxPiTrace.real());
+
+                chainA = E1 * yPlusSum0 + E1p * yPlusSum1;
+                const complex<double> ttauyPiTrace =
+                    su3::traceABCD(pi, Uy, phiY, UDy)
+                    - su3::traceABCD(pi, UDymY, phimY, UymY)
+                    + su3::traceABCD(piX, UypX, phiXY, UDypX)
+                    - su3::traceABCD(piX, UDypXmY, phipXmY, UypXmY)
+                    + su3::traceABCD(piY, UypY, phi2Y, UDypY)
+                    - su3::traceABCD(piY, UDy, phi, Uy)
+                    + su3::traceABCD(piXY, UypXpY, phiX2Y, UDypXpY)
+                    - su3::traceABCD(piXY, UDypX, phiX, UypX);
+                lat->cells[pos]->setTtauy(
+                    +2. / (it * dtau) / 8. * chainA.trace().imag()
+                    - 2. / 8. / (it * dtau) * ttauyPiTrace.real());
+
+                const complex<double> ttauetaTrace =
+                    su3::traceAB(E1, covGradX0) + su3::traceAB(E1p, gradXAtY)
+                    + su3::traceAB(E2, covGradY0) + su3::traceAB(E2p, gradYAtX);
+                lat->cells[pos]->setTtaueta(
+                    g / (it * dtau) / (it * dtau) / (it * dtau)
+                    * ttauetaTrace.real());
+
+                E1AtYToPos = Uy * E1p * UDy;
+                E2AtXToPos = Ux * E2p * UDx;
+                chainA =
+                    -1. / 4. * g * g * (E1 + E1AtYToPos) * (E2 + E2AtXToPos)
+                    + 1. / 4.
+                          * (covGradX0 * covGradY0 + gradXAtYToPos * covGradY0
+                             + covGradX0 * gradYAtXToPos
+                             + gradXAtYToPos * gradYAtXToPos);
+                lat->cells[pos]->setTxy(
+                    2. / (it * dtau) / (it * dtau) * chainA.trace().real());
+
+                const complex<double> txetaElectricTrace =
+                    su3::traceAB(E1, pi) + su3::traceABCD(E1, Ux, piX, UDx)
+                    + su3::traceAB(E1p, piY)
+                    + su3::traceABCD(E1p, UxpY, piXY, UDxpY);
+                chainA = xMinusSum0 * covGradY0 + xMinusSum1 * gradYAtX;
+                lat->cells[pos]->setTxeta(
+                    -2. / (it * dtau) / (it * dtau)
+                    * (1. / 4. * g * txetaElectricTrace.real()
+                       - 1. / 8. / g * chainA.trace().imag()));
+
+                const complex<double> tyetaElectricTrace =
+                    su3::traceAB(E2, pi) + su3::traceABCD(E2, Uy, piY, UDy)
+                    + su3::traceAB(E2p, piX)
+                    + su3::traceABCD(E2p, UypX, piXY, UDypX);
+                chainA = yPlusSum0 * covGradX0 + yPlusSum1 * gradXAtY;
+                lat->cells[pos]->setTyeta(
+                    -2. / (it * dtau) / (it * dtau)
+                    * (1. / 4. * g * tyetaElectricTrace.real()
+                       - 1. / 8. / g * chainA.trace().imag()));
+
+                lat->cells[pos]->setTtaux(
+                    lat->cells[pos]->getTtaux() * 1 / pow(a, 4.));
+                lat->cells[pos]->setTtauy(
+                    lat->cells[pos]->getTtauy() * 1 / pow(a, 4.));
+                lat->cells[pos]->setTtaueta(
+                    lat->cells[pos]->getTtaueta() * 1 / pow(a, 5.));
+                lat->cells[pos]->setTxy(
+                    lat->cells[pos]->getTxy() * 1 / pow(a, 4.));
+                lat->cells[pos]->setTxeta(
+                    lat->cells[pos]->getTxeta() * 1 / pow(a, 5.));
+                lat->cells[pos]->setTyeta(
+                    lat->cells[pos]->getTyeta() * 1 / pow(a, 5.));
+
+                averageTtautau += lat->cells[pos]->getTtautau()
+                                  * lat->cells[pos]->getTtautau();
+                averageTtaueta += lat->cells[pos]->getTtaueta()
+                                  * lat->cells[pos]->getTtaueta();
+                averageTxx +=
+                    lat->cells[pos]->getTxx() * lat->cells[pos]->getTxx();
             }
-            posX = lat->pospX[pos];
-            posY = lat->pospY[pos];
-            posXY = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 1);
-
-            posmX = lat->posmX[pos];
-            posmY = lat->posmY[pos];
-
-            posmXpY = lat->posmXpY[pos];
-            pospXmY = lat->pospXmY[pos];
-
-            pos2X = std::min(N - 1, i + 2) * N + j;
-            pos2Y = i * N + std::min(N - 1, j + 2);
-
-            pos2XY = std::min(N - 1, i + 2) * N + std::min(N - 1, j + 1);
-            posX2Y = std::min(N - 1, i + 1) * N + std::min(N - 1, j + 2);
-
-            E1 = lat->U[pos];
-            E2 = lat->U2[pos];
-            E1p = lat->U[posY];  // shift x value in y direction
-            E2p = lat->U2[posX];  // shift y value in x direction
-
-            pi = lat->Ux2[pos];
-            piX = lat->Ux2[posX];
-            piY = lat->Ux2[posY];
-            piXY = lat->Ux2[posXY];
-
-            phi = lat->Uy2[pos];
-            phimX = lat->Uy2[posmX];
-            phiX = lat->Uy2[posX];
-            phimY = lat->Uy2[posmY];
-            phiY = lat->Uy2[posY];
-            phiXY = lat->Uy2[posXY];
-            phimXpY = lat->Uy2[posmXpY];
-            phipXmY = lat->Uy2[pospXmY];
-            phi2X = lat->Uy2[pos2X];
-            phi2XY = lat->Uy2[pos2XY];
-            phi2Y = lat->Uy2[pos2Y];
-            phiX2Y = lat->Uy2[posX2Y];
-
-            Ux = lat->Ux[pos];
-            UDx = Ux;
-            UDx.conjg();
-
-            UxmX = lat->Ux[posmX];
-            UDxmX = lat->Ux[posmX];
-            UDxmX.conjg();
-            UxmXpY = lat->Ux[posmXpY];
-            UDxmXpY = lat->Ux[posmXpY];
-            UDxmXpY.conjg();
-
-            UxpX = lat->Ux[posX];
-            UxpY = lat->Ux[posY];
-            UDxpX = UxpX;
-            UDxpX.conjg();
-            UDxpY = UxpY;
-            UDxpY.conjg();
-
-            UxpXpY = lat->Ux[posXY];
-            UDxpXpY = lat->Ux[posXY];
-            UDxpXpY.conjg();
-            UxmXpY = lat->Ux[posmXpY];
-            UDxmXpY = UxmXpY;
-            UDxmXpY.conjg();
-
-            Uy = lat->Uy[pos];
-            UDy = Uy;
-            UDy.conjg();
-
-            UymY = lat->Uy[posmY];
-            UDymY = lat->Uy[posmY];
-            UDymY.conjg();
-            UypXmY = lat->Uy[pospXmY];
-            UDypXmY = lat->Uy[pospXmY];
-            UDypXmY.conjg();
-
-            UypY = lat->Uy[posY];
-            UypX = lat->Uy[posX];
-            UDypX = UypX;
-            UDypX.conjg();
-
-            UDypY = lat->Uy[posY];
-            UDypY.conjg();
-
-            UDxpX = lat->Ux[posX];
-            UDxpX.conjg();
-
-            Uyp2X = lat->Uy[pos2X];
-            UDyp2X = Uyp2X;
-            UDyp2X.conjg();
-            Uxp2Y = lat->Ux[pos2Y];
-            UDxp2Y = Uxp2Y;
-            UDxp2Y.conjg();
-
-            UypXpY = lat->Uy[posXY];
-            UDypXpY = lat->Uy[posXY];
-            UDypXpY.conjg();
-            UymX = lat->Uy[posmX];
-            UDymX = UymX;
-            UDymX.conjg();
-            UxmY = lat->Ux[posmY];
-            UDxmY = UxmY;
-            UDxmY.conjg();
-            UypXmY = lat->Uy[pospXmY];
-
-            // Cache the repeated four-link magnetic structures once per site.
-            // The historical expressions recomputed every four-link chain once
-            // for the matrix difference and again for its trace subtraction,
-            // then repeated the same structures in Txeta/Tyeta. Preserve the
-            // original product ordering, but materialize each traceless
-            // difference only once and reuse it below.
-            chainA = Uy * UxpY * UDypX * UDx;
-            chainB = Ux * UypX * UDxpY * UDy;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinus0);
-
-            chainA = UDxmX * UymX * UxmXpY * UDy;
-            chainB = Uy * UDxmXpY * UDymX * UxmX;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusM);
-
-            chainA = UypX * UxpXpY * UDyp2X * UDxpX;
-            chainB = UxpX * Uyp2X * UDxpXpY * UDypX;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusP);
-
-            chainA = UDx * Uy * UxpY * UDypX;
-            chainB = UypX * UDxpY * UDy * Ux;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, xMinusT);
-
-            xMinusSum0 = xMinus0 + xMinusM;
-            xMinusSum1 = xMinusP + xMinusT;
-
-            // The first y-oriented difference is the opposite orientation of
-            // xMinus0 and can be reused by a sign flip.
-            yPlus0 = (-1.) * xMinus0;
-
-            chainA = UDymY * UxmY * UypXmY * UDx;
-            chainB = Ux * UDypXmY * UDxmY * UymY;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusM);
-
-            chainA = UxpY * UypXpY * UDxp2Y * UDypY;
-            chainB = UypY * Uxp2Y * UDypXpY * UDxpY;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusP);
-
-            chainA = UDy * Ux * UypX * UDxpY;
-            chainB = UxpY * UDypX * UDx * Uy;
-            makeTmunuTracelessDifference(chainA, chainB, one, Nc, yPlusT);
-
-            yPlusSum0 = yPlus0 + yPlusM;
-            yPlusSum1 = yPlusP + yPlusT;
-
-            // Cache covariant scalar gradients shared by Txy, Ttaueta,
-            // Txeta, and Tyeta.
-            covGradX0 = Ux * phiX * UDx - phi;
-            covGradY0 = Uy * phiY * UDy - phi;
-            gradXAtY = UxpY * phiXY * UDxpY - phiY;
-            gradYAtX = UypX * phiXY * UDypX - phiX;
-            gradXAtYToPos = Uy * gradXAtY * UDy;
-            gradYAtXToPos = Ux * gradYAtX * UDx;
-
-            chainA = E2 * xMinusSum0 + E2p * xMinusSum1;
-            const complex<double> ttauxPiTrace =
-                su3::traceABCD(pi, Ux, phiX, UDx)
-                - su3::traceABCD(pi, UDxmX, phimX, UxmX)
-                + su3::traceABCD(piY, UxpY, phiXY, UDxpY)
-                - su3::traceABCD(piY, UDxmXpY, phimXpY, UxmXpY)
-                + su3::traceABCD(piX, UxpX, phi2X, UDxpX)
-                - su3::traceABCD(piX, UDx, phi, Ux)
-                + su3::traceABCD(piXY, UxpXpY, phi2XY, UDxpXpY)
-                - su3::traceABCD(piXY, UDxpY, phiY, UxpY);
-            lat->cells[pos]->setTtaux(
-                +2. / (it * dtau) / 8. * chainA.trace().imag()
-                - 2. / 8. / (it * dtau) * ttauxPiTrace.real());
-
-            chainA = E1 * yPlusSum0 + E1p * yPlusSum1;
-            const complex<double> ttauyPiTrace =
-                su3::traceABCD(pi, Uy, phiY, UDy)
-                - su3::traceABCD(pi, UDymY, phimY, UymY)
-                + su3::traceABCD(piX, UypX, phiXY, UDypX)
-                - su3::traceABCD(piX, UDypXmY, phipXmY, UypXmY)
-                + su3::traceABCD(piY, UypY, phi2Y, UDypY)
-                - su3::traceABCD(piY, UDy, phi, Uy)
-                + su3::traceABCD(piXY, UypXpY, phiX2Y, UDypXpY)
-                - su3::traceABCD(piXY, UDypX, phiX, UypX);
-            lat->cells[pos]->setTtauy(
-                +2. / (it * dtau) / 8. * chainA.trace().imag()
-                - 2. / 8. / (it * dtau) * ttauyPiTrace.real());
-
-            const complex<double> ttauetaTrace =
-                su3::traceAB(E1, covGradX0) + su3::traceAB(E1p, gradXAtY)
-                + su3::traceAB(E2, covGradY0) + su3::traceAB(E2p, gradYAtX);
-            lat->cells[pos]->setTtaueta(
-                g / (it * dtau) / (it * dtau) / (it * dtau)
-                * ttauetaTrace.real());
-
-            E1AtYToPos = Uy * E1p * UDy;
-            E2AtXToPos = Ux * E2p * UDx;
-            chainA =
-                -1. / 4. * g * g * (E1 + E1AtYToPos) * (E2 + E2AtXToPos)
-                + 1. / 4.
-                      * (covGradX0 * covGradY0 + gradXAtYToPos * covGradY0
-                         + covGradX0 * gradYAtXToPos
-                         + gradXAtYToPos * gradYAtXToPos);
-            lat->cells[pos]->setTxy(
-                2. / (it * dtau) / (it * dtau) * chainA.trace().real());
-
-            const complex<double> txetaElectricTrace =
-                su3::traceAB(E1, pi) + su3::traceABCD(E1, Ux, piX, UDx)
-                + su3::traceAB(E1p, piY)
-                + su3::traceABCD(E1p, UxpY, piXY, UDxpY);
-            chainA = xMinusSum0 * covGradY0 + xMinusSum1 * gradYAtX;
-            lat->cells[pos]->setTxeta(
-                -2. / (it * dtau) / (it * dtau)
-                * (1. / 4. * g * txetaElectricTrace.real()
-                   - 1. / 8. / g * chainA.trace().imag()));
-
-            const complex<double> tyetaElectricTrace =
-                su3::traceAB(E2, pi) + su3::traceABCD(E2, Uy, piY, UDy)
-                + su3::traceAB(E2p, piX)
-                + su3::traceABCD(E2p, UypX, piXY, UDypX);
-            chainA = yPlusSum0 * covGradX0 + yPlusSum1 * gradXAtY;
-            lat->cells[pos]->setTyeta(
-                -2. / (it * dtau) / (it * dtau)
-                * (1. / 4. * g * tyetaElectricTrace.real()
-                   - 1. / 8. / g * chainA.trace().imag()));
-
-            lat->cells[pos]->setTtaux(
-                lat->cells[pos]->getTtaux() * 1 / pow(a, 4.));
-            lat->cells[pos]->setTtauy(
-                lat->cells[pos]->getTtauy() * 1 / pow(a, 4.));
-            lat->cells[pos]->setTtaueta(
-                lat->cells[pos]->getTtaueta() * 1 / pow(a, 5.));
-            lat->cells[pos]->setTxy(lat->cells[pos]->getTxy() * 1 / pow(a, 4.));
-            lat->cells[pos]->setTxeta(
-                lat->cells[pos]->getTxeta() * 1 / pow(a, 5.));
-            lat->cells[pos]->setTyeta(
-                lat->cells[pos]->getTyeta() * 1 / pow(a, 5.));
-
-            averageTtautau +=
-                lat->cells[pos]->getTtautau() * lat->cells[pos]->getTtautau();
-            averageTtaueta +=
-                lat->cells[pos]->getTtaueta() * lat->cells[pos]->getTtaueta();
-            averageTxx += lat->cells[pos]->getTxx() * lat->cells[pos]->getTxx();
         }
-    }
     }  // omp parallel
     averageTtautau /= double(N);
     averageTtaueta /= double(N);
@@ -1725,12 +1721,14 @@ void Evolution::eccentricity(
             pos = ix * N + iy;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -1892,12 +1890,14 @@ void Evolution::eccentricity(
             }
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2060,12 +2060,14 @@ void Evolution::eccentricity(
             pos = ix * N + iy;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2740,12 +2742,14 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -2945,12 +2949,14 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3126,12 +3132,14 @@ int Evolution::multiplicity(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3390,7 +3398,8 @@ int Evolution::multiplicity(
     }
 
     addPhaseAndRestart(
-        "observables.gluon_multiplicity.bin_postprocess", multiplicityPhaseStart);
+        "observables.gluon_multiplicity.bin_postprocess",
+        multiplicityPhaseStart);
 
     //  double dNdetaHadrons, dNdetaHadronsCut, dNdetaHadronsCut2;
     //  double dEdetaHadrons, dEdetaHadronsCut, dEdetaHadronsCut2;
@@ -3604,17 +3613,11 @@ int Evolution::multiplicity(
                                     c))))
                << endl;
         foutNN.close();
-    writeGluonMultiplicityTarget(
-        param, it, a, dtau,
-        dNdeta, dNdeta2,
-        dEdeta, dEdeta2,
-        dNdetaCut, dEdetaCut,
-        dNdetaCut2, dEdetaCut2,
-        n, E, counter, bins, dkt);
-
+        writeGluonMultiplicityTarget(
+            param, it, a, dtau, dNdeta, dNdeta2, dEdeta, dEdeta2, dNdetaCut,
+            dEdetaCut, dNdetaCut2, dEdetaCut2, n, E, counter, bins, dkt);
     }
-    addPhaseAndRestart(
-        "output.gluon_multiplicity", multiplicityPhaseStart);
+    addPhaseAndRestart("output.gluon_multiplicity", multiplicityPhaseStart);
 
     for (int i = 0; i < N * N; i++) {
         delete E1[i];
@@ -3723,12 +3726,14 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -3932,12 +3937,14 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -4108,12 +4115,14 @@ int Evolution::multiplicitynkxky(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;
@@ -4771,12 +4780,14 @@ int Evolution::correlations(
             pos = i * N + j;
 
             if (param->getRunningCoupling()) {
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2A = lat->cells[pos]->getg2mu2A();
                 } else
                     g2mu2A = 0;
 
-                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0 && pos % N < N - 1) {
+                if (pos / N > 0 && pos / N < N - 1 && pos % N > 0
+                    && pos % N < N - 1) {
                     g2mu2B = lat->cells[pos]->getg2mu2B();
                 } else
                     g2mu2B = 0;

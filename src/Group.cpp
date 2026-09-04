@@ -10,8 +10,8 @@ using std::endl;
 
 Group::Group(int N) {
     if (N != 3) {
-        std::cerr << "Error: IP-Glasma Group is SU(3)-only; received SU("
-                  << N << "). Exiting." << endl;
+        std::cerr << "Error: IP-Glasma Group is SU(3)-only; received SU(" << N
+                  << "). Exiting." << endl;
         std::exit(1);
     }
 

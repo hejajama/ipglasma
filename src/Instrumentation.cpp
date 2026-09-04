@@ -19,9 +19,8 @@ bool envEnabled(const char *name) {
     const char *value = std::getenv(name);
     if (value == NULL || value[0] == '\0') return false;
     const std::string text(value);
-    return text != "0" && text != "false" && text != "FALSE"
-           && text != "off" && text != "OFF" && text != "no"
-           && text != "NO";
+    return text != "0" && text != "false" && text != "FALSE" && text != "off"
+           && text != "OFF" && text != "no" && text != "NO";
 }
 
 std::string envOrDefault(const char *name, const char *fallback) {
@@ -44,8 +43,12 @@ bool fileNeedsHeader(const std::string &path) {
 class FieldDigest {
   public:
     FieldDigest()
-        : hash_(14695981039346656037ULL), count_(0), finite_count_(0),
-          nonfinite_(0), sum_(0.0L), sumsq_(0.0L),
+        : hash_(14695981039346656037ULL),
+          count_(0),
+          finite_count_(0),
+          nonfinite_(0),
+          sum_(0.0L),
+          sumsq_(0.0L),
           min_(std::numeric_limits<double>::infinity()),
           max_(-std::numeric_limits<double>::infinity()) {}
 
@@ -78,9 +81,8 @@ class FieldDigest {
     std::uint64_t count() const { return count_; }
     std::uint64_t nonfinite() const { return nonfinite_; }
     double mean() const {
-        return finite_count_ == 0
-                   ? std::numeric_limits<double>::quiet_NaN()
-                   : static_cast<double>(sum_ / finite_count_);
+        return finite_count_ == 0 ? std::numeric_limits<double>::quiet_NaN()
+                                  : static_cast<double>(sum_ / finite_count_);
     }
     double rms() const {
         return finite_count_ == 0
@@ -88,14 +90,12 @@ class FieldDigest {
                    : std::sqrt(static_cast<double>(sumsq_ / finite_count_));
     }
     double minimum() const {
-        return finite_count_ == 0
-                   ? std::numeric_limits<double>::quiet_NaN()
-                   : min_;
+        return finite_count_ == 0 ? std::numeric_limits<double>::quiet_NaN()
+                                  : min_;
     }
     double maximum() const {
-        return finite_count_ == 0
-                   ? std::numeric_limits<double>::quiet_NaN()
-                   : max_;
+        return finite_count_ == 0 ? std::numeric_limits<double>::quiet_NaN()
+                                  : max_;
     }
 
   private:
@@ -126,11 +126,11 @@ void writeDigestRow(
     std::ofstream &output, int rank, int event_id, const std::string &label,
     const FieldDigest &digest, std::uint64_t &combined) {
     output << rank << '\t' << event_id << '\t' << label << '\t'
-           << digest.count() << '\t' << digest.nonfinite() << '\t'
-           << "0x" << std::hex << std::setw(16) << std::setfill('0')
-           << digest.hash() << std::dec << std::setfill(' ') << '\t'
-           << std::setprecision(17) << digest.mean() << '\t' << digest.rms()
-           << '\t' << digest.minimum() << '\t' << digest.maximum() << '\n';
+           << digest.count() << '\t' << digest.nonfinite() << '\t' << "0x"
+           << std::hex << std::setw(16) << std::setfill('0') << digest.hash()
+           << std::dec << std::setfill(' ') << '\t' << std::setprecision(17)
+           << digest.mean() << '\t' << digest.rms() << '\t' << digest.minimum()
+           << '\t' << digest.maximum() << '\n';
     mixCombined(combined, label, digest.hash());
 }
 
@@ -169,8 +169,11 @@ Profiler &Profiler::instance() {
 }
 
 Profiler::Profiler()
-    : enabled_(envEnabled("IPGLASMA_PROFILE")), event_active_(false), rank_(0),
-      event_id_(-1), output_dir_(envOrDefault("IPGLASMA_PROFILE_DIR", ".")) {}
+    : enabled_(envEnabled("IPGLASMA_PROFILE")),
+      event_active_(false),
+      rank_(0),
+      event_id_(-1),
+      output_dir_(envOrDefault("IPGLASMA_PROFILE_DIR", ".")) {}
 
 void Profiler::initialize(int rank) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -221,7 +224,8 @@ void Profiler::endEvent() {
             output << "rank\tevent\tphase\tseconds\tcalls\tpercent_event\n";
         }
         const double event_seconds = total.seconds;
-        for (std::map<std::string, PhaseStat>::const_iterator it = stats_.begin();
+        for (std::map<std::string, PhaseStat>::const_iterator it =
+                 stats_.begin();
              it != stats_.end(); ++it) {
             const double percent =
                 event_seconds > 0.0 ? 100.0 * it->second.seconds / event_seconds
@@ -265,15 +269,12 @@ double wallSeconds() {
     return elapsed.count();
 }
 
-bool fingerprintEnabled() {
-    return envEnabled("IPGLASMA_FINGERPRINT");
-}
+bool fingerprintEnabled() { return envEnabled("IPGLASMA_FINGERPRINT"); }
 
 void writeLatticeFingerprint(Lattice *lat, int rank, int event_id) {
     if (!fingerprintEnabled() || lat == NULL) return;
 
-    const std::string output_dir =
-        envOrDefault("IPGLASMA_PROFILE_DIR", ".");
+    const std::string output_dir = envOrDefault("IPGLASMA_PROFILE_DIR", ".");
     std::ostringstream filename;
     filename << "ipglasma_fingerprint_rank" << rank << ".tsv";
     const std::string path = joinPath(output_dir, filename.str());
@@ -292,9 +293,12 @@ void writeLatticeFingerprint(Lattice *lat, int rank, int event_id) {
         output, lat, rank, event_id, "epsilon", &Cell::getEpsilon, combined);
     digestScalarField(
         output, lat, rank, event_id, "Ttautau", &Cell::getTtautau, combined);
-    digestScalarField(output, lat, rank, event_id, "Txx", &Cell::getTxx, combined);
-    digestScalarField(output, lat, rank, event_id, "Tyy", &Cell::getTyy, combined);
-    digestScalarField(output, lat, rank, event_id, "Txy", &Cell::getTxy, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "Txx", &Cell::getTxx, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "Tyy", &Cell::getTyy, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "Txy", &Cell::getTxy, combined);
     digestScalarField(
         output, lat, rank, event_id, "Tetaeta", &Cell::getTetaeta, combined);
     digestScalarField(
@@ -307,9 +311,12 @@ void writeLatticeFingerprint(Lattice *lat, int rank, int event_id) {
         output, lat, rank, event_id, "Txeta", &Cell::getTxeta, combined);
     digestScalarField(
         output, lat, rank, event_id, "Tyeta", &Cell::getTyeta, combined);
-    digestScalarField(output, lat, rank, event_id, "utau", &Cell::getutau, combined);
-    digestScalarField(output, lat, rank, event_id, "ux", &Cell::getux, combined);
-    digestScalarField(output, lat, rank, event_id, "uy", &Cell::getuy, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "utau", &Cell::getutau, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "ux", &Cell::getux, combined);
+    digestScalarField(
+        output, lat, rank, event_id, "uy", &Cell::getuy, combined);
     digestScalarField(
         output, lat, rank, event_id, "ueta", &Cell::getueta, combined);
     digestScalarField(
@@ -324,10 +331,9 @@ void writeLatticeFingerprint(Lattice *lat, int rank, int event_id) {
     digestMatrixField(output, lat->Uy2, rank, event_id, "phi.reim", combined);
     digestMatrixField(output, lat->Ux2, rank, event_id, "pi.reim", combined);
 
-    output << rank << '\t' << event_id << "\tALL_FIELDS\t0\t0\t0x"
-           << std::hex << std::setw(16) << std::setfill('0') << combined
-           << std::dec << std::setfill(' ')
-           << "\tnan\tnan\tnan\tnan\n";
+    output << rank << '\t' << event_id << "\tALL_FIELDS\t0\t0\t0x" << std::hex
+           << std::setw(16) << std::setfill('0') << combined << std::dec
+           << std::setfill(' ') << "\tnan\tnan\tnan\tnan\n";
 }
 
 }  // namespace ipg

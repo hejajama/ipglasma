@@ -97,8 +97,8 @@ void Lattice::WriteSU3Matricies(std::string fileprefix, Parameters *param) {
     for (int ix = 0; ix < N; ix++) {
         for (int iy = 0; iy < N; iy++) {
             int pos = ix * N + iy;
-            foutU << ix << " " << iy << " "
-                  << Uy2[pos].MatrixToString() << std::endl;
+            foutU << ix << " " << iy << " " << Uy2[pos].MatrixToString()
+                  << std::endl;
         }
         foutU << std::endl;
     }
@@ -111,8 +111,8 @@ void Lattice::WriteSU3Matricies(std::string fileprefix, Parameters *param) {
     for (int ix = 0; ix < N; ix++) {
         for (int iy = 0; iy < N; iy++) {
             int pos = ix * N + iy;
-            foutU2 << ix << " " << iy << " "
-                   << Ux2[pos].MatrixToString() << std::endl;
+            foutU2 << ix << " " << iy << " " << Ux2[pos].MatrixToString()
+                   << std::endl;
         }
         foutU2 << std::endl;
     }
@@ -142,11 +142,10 @@ void Lattice::WriteWilsonLines(
             for (int iy = 0; iy < N; iy++) {
                 int pos = ix * N + iy;
                 if (iA == 1) {
-                    foutU << ix << " " << iy << " "
-                          << U[pos].MatrixToString() << std::endl;
+                    foutU << ix << " " << iy << " " << U[pos].MatrixToString()
+                          << std::endl;
                 } else {
-                    foutU << ix << " " << iy << " "
-                          << U2[pos].MatrixToString()
+                    foutU << ix << " " << iy << " " << U2[pos].MatrixToString()
                           << std::endl;
                 }
             }

@@ -8,8 +8,8 @@
 #include <iostream>
 #include <vector>
 
-#include "Matrix.h"
 #include "Instrumentation.h"
+#include "Matrix.h"
 
 //**************************************************************************
 // FFT class.
@@ -291,7 +291,8 @@ void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
     // new-array interface.  FFTW guarantees concurrent execution of the same
     // plan is thread-safe when the input/output arrays are distinct.
     double segmentStart = 0.;
-#pragma omp parallel shared(segmentStart, packSeconds, executeSeconds, unpackSeconds)
+#pragma omp parallel shared( \
+        segmentStart, packSeconds, executeSeconds, unpackSeconds)
     {
 #pragma omp single
         {
@@ -300,7 +301,8 @@ void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
 
 #pragma omp for schedule(static)
         for (int k = 0; k < mDim; ++k) {
-            fftw_complex *localInput = inputMany + static_cast<std::size_t>(k) * ntot;
+            fftw_complex *localInput =
+                inputMany + static_cast<std::size_t>(k) * ntot;
             for (int i = 0; i < nn[0]; ++i) {
                 for (int j = 0; j < nn[1]; ++j) {
                     const int pos = i * nn[1] + j;
@@ -322,8 +324,10 @@ void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
 
 #pragma omp for schedule(static)
         for (int k = 0; k < mDim; ++k) {
-            fftw_complex *localInput = inputMany + static_cast<std::size_t>(k) * ntot;
-            fftw_complex *localOutput = outputMany + static_cast<std::size_t>(k) * ntot;
+            fftw_complex *localInput =
+                inputMany + static_cast<std::size_t>(k) * ntot;
+            fftw_complex *localOutput =
+                outputMany + static_cast<std::size_t>(k) * ntot;
             if (isign == 1)
                 fftw_execute_dft(p, localInput, localOutput);
             else
@@ -340,7 +344,8 @@ void FFT::fftn(T **data, T **outdata, const int nn[], const int isign) {
 
 #pragma omp for schedule(static)
         for (int k = 0; k < mDim; ++k) {
-            fftw_complex *localOutput = outputMany + static_cast<std::size_t>(k) * ntot;
+            fftw_complex *localOutput =
+                outputMany + static_cast<std::size_t>(k) * ntot;
             for (int i = 0; i < nn[0]; ++i) {
                 for (int j = 0; j < nn[1]; ++j) {
                     const int pos = i * nn[1] + j;

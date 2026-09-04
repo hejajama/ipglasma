@@ -118,12 +118,11 @@ int Setup::IFind(string file_name, string st) {
     return static_cast<int>(f);
 } /* IFind */
 
-int Setup::IFindOptional(
-    string file_name, string st, int defaultValue) {
+int Setup::IFindOptional(string file_name, string st, int defaultValue) {
     ifstream input(file_name.c_str());
     if (!input.is_open()) {
-        cerr << "The input file named " << file_name
-             << " is absent. Exiting." << endl;
+        cerr << "The input file named " << file_name << " is absent. Exiting."
+             << endl;
         exit(1);
     }
 

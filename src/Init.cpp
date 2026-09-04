@@ -2,19 +2,19 @@
 // Copyright (C) 2012 Bjoern Schenke.
 
 #include "Init.h"
-#include "Instrumentation.h"
 
 #include <cstdint>
-#include <iomanip>
-#include <stdexcept>
-#include <vector>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "Instrumentation.h"
 #include "Phys_consts.h"
 #include "gsl/gsl_linalg.h"
 
@@ -42,14 +42,17 @@ inline std::uint64_t forwardLightconeRetrySeed(
     std::uint64_t runSeed, int eventId, int pos, int direction) {
     std::uint64_t key = splitmix64(runSeed);
     key = splitmix64(
-        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(eventId))
-               + 0xD1B54A32D192ED03ULL));
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(eventId))
+           + 0xD1B54A32D192ED03ULL));
     key = splitmix64(
-        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(pos))
-               + 0x94D049BB133111EBULL));
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(pos))
+           + 0x94D049BB133111EBULL));
     key = splitmix64(
-        key ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(direction))
-               + 0xBF58476D1CE4E5B9ULL));
+        key
+        ^ (static_cast<std::uint64_t>(static_cast<std::uint32_t>(direction))
+           + 0xBF58476D1CE4E5B9ULL));
     return key;
 }
 
@@ -879,7 +882,6 @@ void Init::setColorChargeDensity(
     const double L = param->getL();
     const double a = L / N;  // lattice spacing in fm
 
-    
     int pos, posA, posB;
     const int A1 = nucleusA_.size();
     const int A2 = nucleusB_.size();
@@ -1790,95 +1792,95 @@ void Init::computeCollisionGeometryQuantities(Lattice *lat, Parameters *param) {
 
 namespace {
 void writeInitialWilsonTrainingData(Lattice *lat, Parameters *param) {
-  const int N = param->getSize();
-  const int Nc = param->getNc();
-  const double L = param->getL();
-  const double a = L / static_cast<double>(N);
+    const int N = param->getSize();
+    const int Nc = param->getNc();
+    const double L = param->getL();
+    const double a = L / static_cast<double>(N);
 
-  // Payload: [beam, real_or_imag, x, y, row, col], C-order.
-  constexpr int nBeams = 2;
-  const std::size_t matrixElements =
-      static_cast<std::size_t>(N) * N * Nc * Nc;
-  std::vector<float> payload(
-      static_cast<std::size_t>(nBeams) * 2 * matrixElements);
+    // Payload: [beam, real_or_imag, x, y, row, col], C-order.
+    constexpr int nBeams = 2;
+    const std::size_t matrixElements =
+        static_cast<std::size_t>(N) * N * Nc * Nc;
+    std::vector<float> payload(
+        static_cast<std::size_t>(nBeams) * 2 * matrixElements);
 
-  for (int beam = 0; beam < nBeams; ++beam) {
-    const std::size_t realOffset =
-        static_cast<std::size_t>(2 * beam) * matrixElements;
-    const std::size_t imagOffset = realOffset + matrixElements;
-    for (int x = 0; x < N; ++x) {
-      for (int y = 0; y < N; ++y) {
-        const int pos = x * N + y;
-        const Matrix &matrix =
-            (beam == 0) ? lat->U[pos] : lat->U2[pos];
-        const std::complex<double> *elements = matrix.data();
-        const std::size_t siteOffset =
-            static_cast<std::size_t>(pos) * Nc * Nc;
-        for (int row = 0; row < Nc; ++row) {
-          for (int col = 0; col < Nc; ++col) {
-            const std::size_t element =
-                static_cast<std::size_t>(row) * Nc + col;
-            payload[realOffset + siteOffset + element] =
-                static_cast<float>(elements[element].real());
-            payload[imagOffset + siteOffset + element] =
-                static_cast<float>(elements[element].imag());
-          }
+    for (int beam = 0; beam < nBeams; ++beam) {
+        const std::size_t realOffset =
+            static_cast<std::size_t>(2 * beam) * matrixElements;
+        const std::size_t imagOffset = realOffset + matrixElements;
+        for (int x = 0; x < N; ++x) {
+            for (int y = 0; y < N; ++y) {
+                const int pos = x * N + y;
+                const Matrix &matrix = (beam == 0) ? lat->U[pos] : lat->U2[pos];
+                const std::complex<double> *elements = matrix.data();
+                const std::size_t siteOffset =
+                    static_cast<std::size_t>(pos) * Nc * Nc;
+                for (int row = 0; row < Nc; ++row) {
+                    for (int col = 0; col < Nc; ++col) {
+                        const std::size_t element =
+                            static_cast<std::size_t>(row) * Nc + col;
+                        payload[realOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].real());
+                        payload[imagOffset + siteOffset + element] =
+                            static_cast<float>(elements[element].imag());
+                    }
+                }
+            }
         }
-      }
     }
-  }
 
-  const std::uint16_t endianProbe = 1;
-  if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
-    throw std::runtime_error(
-        "writeInitialWilsonTrainingData requires a little-endian host");
-  }
+    const std::uint16_t endianProbe = 1;
+    if (*reinterpret_cast<const unsigned char *>(&endianProbe) != 1) {
+        throw std::runtime_error(
+            "writeInitialWilsonTrainingData requires a little-endian host");
+    }
 
-  std::stringstream metadata;
-  metadata << std::setprecision(17)
-           << "{\"format\":\"ipglasma-initial-wilson-lines\","
-           << "\"version\":1,"
-           << "\"dtype\":\"<f4\","
-           << "\"shape\":[2,2," << N << "," << N << "," << Nc << ","
-           << Nc << "],"
-           << "\"axis_order\":[\"beam\",\"complex_part\",\"x\",\"y\","
-              "\"row\",\"col\"],"
-           << "\"fields\":[\"VA\",\"VB\"],"
-           << "\"complex_part\":[\"real\",\"imag\"],"
-           << "\"native_site_index\":\"pos=x*N+y\","
-           << "\"event_id\":" << param->getEventId() << ","
-           << "\"N\":" << N << ","
-           << "\"Nc\":" << Nc << ","
-           << "\"L_fm\":" << L << ","
-           << "\"a_fm\":" << a << ","
-           << "\"rapidity\":" << param->getRapidity() << "}";
-  const std::string metadataString = metadata.str();
+    std::stringstream metadata;
+    metadata << std::setprecision(17)
+             << "{\"format\":\"ipglasma-initial-wilson-lines\","
+             << "\"version\":1,"
+             << "\"dtype\":\"<f4\","
+             << "\"shape\":[2,2," << N << "," << N << "," << Nc << "," << Nc
+             << "],"
+             << "\"axis_order\":[\"beam\",\"complex_part\",\"x\",\"y\","
+                "\"row\",\"col\"],"
+             << "\"fields\":[\"VA\",\"VB\"],"
+             << "\"complex_part\":[\"real\",\"imag\"],"
+             << "\"native_site_index\":\"pos=x*N+y\","
+             << "\"event_id\":" << param->getEventId() << ","
+             << "\"N\":" << N << ","
+             << "\"Nc\":" << Nc << ","
+             << "\"L_fm\":" << L << ","
+             << "\"a_fm\":" << a << ","
+             << "\"rapidity\":" << param->getRapidity() << "}";
+    const std::string metadataString = metadata.str();
 
-  std::stringstream filename;
-  filename << "initialWilsonLines" << param->getEventId() << ".ipgw";
-  std::ofstream output(
-      filename.str().c_str(),
-      std::ios::out | std::ios::binary | std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error(
-        "could not open initial-Wilson snapshot " + filename.str());
-  }
-  const char magic[8] = {'I', 'P', 'G', 'W', 'I', 'L', '1', '\0'};
-  const std::uint64_t metadataBytes =
-      static_cast<std::uint64_t>(metadataString.size());
-  output.write(magic, sizeof(magic));
-  output.write(
-      reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
-  output.write(metadataString.data(), metadataString.size());
-  output.write(
-      reinterpret_cast<const char *>(payload.data()),
-      static_cast<std::streamsize>(payload.size() * sizeof(float)));
-  output.close();
-  if (!output) {
-    throw std::runtime_error(
-        "failed while writing initial-Wilson snapshot " + filename.str());
-  }
-  std::cout << "Wrote incoming Wilson lines to " << filename.str() << std::endl;
+    std::stringstream filename;
+    filename << "initialWilsonLines" << param->getEventId() << ".ipgw";
+    std::ofstream output(
+        filename.str().c_str(),
+        std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error(
+            "could not open initial-Wilson snapshot " + filename.str());
+    }
+    const char magic[8] = {'I', 'P', 'G', 'W', 'I', 'L', '1', '\0'};
+    const std::uint64_t metadataBytes =
+        static_cast<std::uint64_t>(metadataString.size());
+    output.write(magic, sizeof(magic));
+    output.write(
+        reinterpret_cast<const char *>(&metadataBytes), sizeof(metadataBytes));
+    output.write(metadataString.data(), metadataString.size());
+    output.write(
+        reinterpret_cast<const char *>(payload.data()),
+        static_cast<std::streamsize>(payload.size() * sizeof(float)));
+    output.close();
+    if (!output) {
+        throw std::runtime_error(
+            "failed while writing initial-Wilson snapshot " + filename.str());
+    }
+    std::cout << "Wrote incoming Wilson lines to " << filename.str()
+              << std::endl;
 }
 }  // namespace
 
@@ -2077,9 +2079,9 @@ void Init::setV(Lattice *lat, Parameters *param, Random *random) {
         delete[] rhoACoeff[ic];
     }
     delete[] rhoACoeff;
-  if (param->getWriteOutputs() == 5) {
-    writeInitialWilsonTrainingData(lat, param);
-  }
+    if (param->getWriteOutputs() == 5) {
+        writeInitialWilsonTrainingData(lat, param);
+    }
 
     // output U
     if (param->getWriteWilsonLines() > 0 && param->getSaveSnapshots()) {
@@ -2401,8 +2403,7 @@ void Init::readVFromFile(Lattice *lat, Parameters *param, int format) {
                             INPUT_CTR++;
                             continue;
                         }
-                        lat->U2[indx].set(
-                            j, k, complex<double>(re, im));
+                        lat->U2[indx].set(j, k, complex<double>(re, im));
                         // if (indx > 65000) cout << "Save ok" << endl;
                     }
                     INPUT_CTR++;
@@ -2632,8 +2633,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
             // status = findUInForwardLightconeBjoern(UDy1, UDy2, temp2);
             const std::uint64_t retrySeedY = forwardLightconeRetrySeed(
                 param->getRandomSeed(), param->getEventId(), pos, 1);
-            status =
-                findUInForwardLightconeChun(UDy1, UDy2, temp2, retrySeedY);
+            status = findUInForwardLightconeChun(UDy1, UDy2, temp2, retrySeedY);
             lat->Uy[pos] = (temp2);
             if (!status) {
                 cout << "pos x = " << pos / param->getSize()
@@ -2659,8 +2659,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
 
             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
 
-            Ux1mUx2 = lat->Ux1[lat->posmX[pos]]
-                      - lat->Ux2[lat->posmX[pos]];
+            Ux1mUx2 = lat->Ux1[lat->posmX[pos]] - lat->Ux2[lat->posmX[pos]];
             UDx1 = lat->Ux1[lat->posmX[pos]];
             UDx1.conjg();
             UDx2 = lat->Ux2[lat->posmX[pos]];
@@ -2690,8 +2689,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
             temp2 =
                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
 
-            Uy1mUy2 = lat->Uy1[lat->posmY[pos]]
-                      - lat->Uy2[lat->posmY[pos]];
+            Uy1mUy2 = lat->Uy1[lat->posmY[pos]] - lat->Uy2[lat->posmY[pos]];
             UDy1 = lat->Uy1[lat->posmY[pos]];
             UDy1.conjg();
             UDy2 = lat->Uy2[lat->posmY[pos]];
@@ -2725,8 +2723,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
 
             temp2 = Ux1mUx2 * UDx - Ux1mUx2 - Ux * UDx1mUDx2 + UDx1mUDx2;
 
-            Ux1mUx2 = lat->Ux1[lat->pospX[pos]]
-                      - lat->Ux2[lat->pospX[pos]];
+            Ux1mUx2 = lat->Ux1[lat->pospX[pos]] - lat->Ux2[lat->pospX[pos]];
             UDx1 = lat->Ux1[lat->pospX[pos]];
             UDx1.conjg();
             UDx2 = lat->Ux2[lat->pospX[pos]];
@@ -2756,8 +2753,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
             temp2 =
                 temp2 + Uy1mUy2 * UDy - Uy1mUy2 - Uy * UDy1mUDy2 + UDy1mUDy2;
 
-            Uy1mUy2 = lat->Uy1[lat->pospY[pos]]
-                      - lat->Uy2[lat->pospY[pos]];
+            Uy1mUy2 = lat->Uy1[lat->pospY[pos]] - lat->Uy2[lat->pospY[pos]];
             UDy1 = lat->Uy1[lat->pospY[pos]];
             UDy1.conjg();
             UDy2 = lat->Uy2[lat->pospY[pos]];
@@ -2782,8 +2778,7 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
             UDx.conjg();
             UDy.conjg();
 
-            Uplaq = lat->Ux[pos]
-                    * (lat->Uy[lat->pospX[pos]] * (UDx * UDy));
+            Uplaq = lat->Ux[pos] * (lat->Uy[lat->pospX[pos]] * (UDx * UDy));
             lat->Uy1[pos] = (Uplaq);
         }
 
@@ -2794,9 +2789,8 @@ void Init::initializeForwardLightCone(Lattice *lat, Parameters *param) {
 
             // this is pi in lattice units as needed for the evolution. (later,
             // the a^4 gives the right units for the energy density
-            lat->Ux2[pos] = (
-                complex<double>(0., -2. / param->getg())
-                * (lat->U[pos]));
+            lat->Ux2[pos] =
+                (complex<double>(0., -2. / param->getg()) * (lat->U[pos]));
             // factor -2 because I have A^eta (note the 1/8 before)
             // but want \pi (E^z).
 

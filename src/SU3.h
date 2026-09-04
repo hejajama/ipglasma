@@ -138,8 +138,8 @@ inline Complex traceABC(const Matrix &a, const Matrix &b, const Matrix &c) {
     for (int i = 0; i < 3; ++i) {
         const int ai = 3 * i;
         for (int j = 0; j < 3; ++j) {
-            const Complex ab = A[ai] * B[j] + A[ai + 1] * B[3 + j]
-                               + A[ai + 2] * B[6 + j];
+            const Complex ab =
+                A[ai] * B[j] + A[ai + 1] * B[3 + j] + A[ai + 2] * B[6 + j];
             tr += ab * C[3 * j + i];
         }
     }
@@ -156,11 +156,11 @@ inline Complex traceABCD(
     for (int i = 0; i < 3; ++i) {
         const int ai = 3 * i;
         for (int j = 0; j < 3; ++j) {
-            const Complex ab = A[ai] * B[j] + A[ai + 1] * B[3 + j]
-                               + A[ai + 2] * B[6 + j];
+            const Complex ab =
+                A[ai] * B[j] + A[ai + 1] * B[3 + j] + A[ai + 2] * B[6 + j];
             const int cj = 3 * j;
-            const Complex cd = C[cj] * D[i] + C[cj + 1] * D[3 + i]
-                               + C[cj + 2] * D[6 + i];
+            const Complex cd =
+                C[cj] * D[i] + C[cj + 1] * D[3 + i] + C[cj + 2] * D[6 + i];
             tr += ab * cd;
         }
     }

@@ -24,7 +24,7 @@ class Matrix {
 
   public:
     struct NoInitTag {};
-    static constexpr NoInitTag noInit{};
+    static constexpr NoInitTag noInit {};
 
     Matrix();
     explicit Matrix(int n);
