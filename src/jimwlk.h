@@ -11,6 +11,8 @@
 #include "Parameters.h"
 #include "Random.h"
 
+enum class NucleusRole { Projectile, Target };
+
 class JIMWLK {
   private:
     Parameters &param_;
@@ -33,9 +35,16 @@ class JIMWLK {
     bool initializedNoise_ = false;
     std::vector<std::complex<double> > **K_;  // data type matches FFT.h
 
+    // xi_/xi2_/CKxi_ are pointer-per-cell views into one contiguous
+    // backing buffer each (xi_data_/xi2_data_/CKxi_data_), so the hot
+    // per-cell loops in evolutionStep() get cache-friendly, sequential
+    // access instead of chasing Ncells_ independent heap allocations.
     std::complex<double> **xi_;    // noise
     std::complex<double> **xi2_;   // noise
     std::complex<double> **CKxi_;  // noise
+    std::complex<double> *xi_data_;
+    std::complex<double> *xi2_data_;
+    std::complex<double> *CKxi_data_;
 
     Matrix **VxsiVx_;
     Matrix **VxsiVy_;
@@ -52,8 +61,7 @@ class JIMWLK {
     void initializeNoise();
 
     void evolution();
-    void evolutionStep();
-    void evolutionStep2();
+    void evolutionStep(NucleusRole nucleus);
 };
 
 #endif  // SRC_JIMWLK_H_
