@@ -468,7 +468,7 @@ void display_logo() {
             "---------"
          << endl;
     cout << "| Classical Yang-Mills evolution with IP-Glasma initial "
-            "configurations v1.4 |"
+            "configurations      |"
          << endl;
     cout << "--------------------------------------------------------------"
             "----"
@@ -488,6 +488,14 @@ void display_logo() {
     cout << "| Phys. Rev. Lett. 108, 252301 (2012) and Phys. Rev. C86, "
             "034908 "
             "(2012)     |"
+         << endl;
+    cout << "| H. Mäntysaari, B. Schenke, C. Shen and W. Zhao "
+            "           "
+            "        "
+            "        |"
+         << endl;
+    cout << "| Phys. Rev. Lett. 135, 022302 (2025)                             "
+            "          |"
          << endl;
     cout << "--------------------------------------------------------------"
             "----"
