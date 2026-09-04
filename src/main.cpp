@@ -640,7 +640,8 @@ int readInput(
         setup->DFind(file_name, "xFromThisFactorTimesQs"));
     param->setLinearb(setup->IFind(file_name, "samplebFromLinearDistribution"));
     param->setWriteOutputs(setup->IFind(file_name, "writeOutputs"));
-    param->setWriteEpsilonUHydro(setup->IFind(file_name, "writeEpsilonUHydro"));
+    param->setWriteEpsilonUHydro(
+        setup->IFindOptional(file_name, "writeEpsilonUHydro", 1));
     param->setWriteTmunuBinary(
         setup->IFindOptional(file_name, "writeTmunuBinary", 1));
     param->setWriteOutputsToHDF5(setup->IFind(file_name, "writeOutputsToHDF5"));
