@@ -4,7 +4,7 @@
 #ifndef Init_H
 #define Init_H
 
-#include <string>
+#include <cstdint>
 
 #include "FFT.h"
 #include "Glauber.h"
@@ -80,17 +80,17 @@ class Init {
     void setColorChargeDensity(
         Lattice *lat, Parameters *param, Random *random, Glauber *glauber);
     void computeCollisionGeometryQuantities(Lattice *lat, Parameters *param);
-    void setV(Lattice *lat, Parameters *param);
+    void setV(Lattice *lat, Parameters *param, Random *random);
     void readVFromFile(Lattice *lat, Parameters *param, int format);
-    void readV2(Lattice *lat, Parameters *param, Glauber *glauber);
-
+    
     // void eccentricity(Lattice *lat, Group *group, Parameters *param, Random
     // *random, Glauber *glauber);
     void multiplicity(Lattice *lat, Parameters *param);
 
     Matrix getUfromExponent(std::vector<double> &in);
     bool findUInForwardLightconeBjoern(Matrix &U1, Matrix &U2, Matrix &Usol);
-    bool findUInForwardLightconeChun(Matrix &U1, Matrix &U2, Matrix &Usol);
+    bool findUInForwardLightconeChun(
+        Matrix &U1, Matrix &U2, Matrix &Usol, std::uint64_t retrySeed);
 
     void readInNucleusConfigs(
         const int nucleusA, const int lightNucleusOption,
