@@ -14,7 +14,6 @@ class Parameters {
     std::vector<std::vector<float>> posteriorParamSets_;
     std::vector<std::vector<float>> posteriorParamSetsNq3_;
     // switches:
-    int initMethod;
 
     double myPI;
     double myhbarc;
@@ -463,8 +462,6 @@ class Parameters {
     bool getRotateReactionPlane() const { return rotateReactionPlane_; }
 
     // switches:
-    void setInitMethod(int x) { initMethod = x; }
-    int getInitMethod() { return initMethod; }
     void setUseNucleus(int x) { useNucleus = x; };
     int getUseNucleus() { return useNucleus; }
     void setUseGaussian(int x) { useGaussian = x; };
@@ -598,5 +595,12 @@ class Parameters {
             saveSnapshots_ = true;
     }
     bool getSaveSnapshots() { return saveSnapshots_; }
+
+    /*
+     * Checks if the parameters are valid. Returns true if they are, false
+     * otherwise. This function can be used to validate the parameters before
+     * running the simulation.
+     */
+    bool ValidParameters();
 };
 #endif  // Parameters_H

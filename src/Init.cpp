@@ -695,6 +695,12 @@ void Init::readInNucleusConfigs(
     messager << "read in nucleus configurations from " << fileName;
     messager.flush("info");
     std::ifstream inFile(fileName, std::ios::binary);
+    if (!inFile) {
+        messager << "could not open nucleus configuration file " << fileName;
+        messager.flush("error");
+        exit(1);
+    }
+
     while (true) {
         vector<float> tempPos;
         for (int i = 0; i < nucleusA; i++) {
