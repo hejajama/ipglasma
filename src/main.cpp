@@ -550,6 +550,8 @@ int readInput(
         setup->StringFind(file_name, "NucleusQsTableFileName"));
     param->setNucleonPositionsFromFile(
         setup->IFind(file_name, "nucleonPositionsFromFile"));
+    param->setNuclearConfigurationsPath(setup->StringFindOptional(
+        file_name, "nuclearConfigurationsPath", "./nucleusConfigurations"));
     param->setTarget(setup->StringFind(file_name, "Target"));
     param->setProjectile(setup->StringFind(file_name, "Projectile"));
     param->setMode(setup->IFind(file_name, "mode"));
